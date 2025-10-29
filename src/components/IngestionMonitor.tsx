@@ -27,14 +27,15 @@ export const IngestionMonitor = () => {
     let cancelled = false;
     const load = async () => {
       // counts
-      const [entitiesCount, documentsCount, factsCount] = await Promise.all([
-        (supabase as any).from('entities').select('*', { count: 'exact', head: true }),
-        (supabase as any).from('documents').select('*', { count: 'exact', head: true }),
-        (supabase as any).from('facts').select('*', { count: 'exact', head: true }),
+      const [entitiesCount, documentsCount, factsCount, lastRunData] = await Promise.all([
+        supabase.from('entities').select('*', { count: 'exact', head: true }),
+        supabase.from('documents').select('*', { count: 'exact', head: true }),
+        supabase.from('facts').select('*', { count: 'exact', head: true }).eq('status', 'verified'),
+        supabase.from('runs').select('created_at').order('created_at', { ascending: false }).limit(1).single(),
       ]);
       if (entitiesCount.error || documentsCount.error || factsCount.error) {
         const err = entitiesCount.error || documentsCount.error || factsCount.error;
-        toast({ title: 'Failed to load stats', description: err.message } as any);
+        toast({ title: 'Failed to load stats', description: err?.message || '' });
       }
       if (cancelled) return;
       setSystemStats((prev) => ({
@@ -42,36 +43,38 @@ export const IngestionMonitor = () => {
         total_entities: entitiesCount.count ?? 0,
         total_documents: documentsCount.count ?? 0,
         total_facts: factsCount.count ?? 0,
+        last_run: lastRunData.data?.created_at || undefined,
       }));
 
-      // recent runs
-      const { data: runs, error: runsErr } = await (supabase as any)
-        .from('ingestion_runs')
-        .select('id, source_name, status, started_at, completed_at, documents_processed')
+      // recent coordinator runs
+      const { data: runs, error: runsErr } = await supabase
+        .from('runs')
+        .select('run_id, env_code, status_code, started_at, ended_at, metrics_json')
         .order('started_at', { ascending: false })
         .limit(10);
       if (runsErr) {
-        toast({ title: 'Failed to load runs', description: runsErr.message } as any);
+        toast({ title: 'Failed to load runs', description: runsErr.message });
       } else if (!cancelled) {
         setRecentRuns((runs ?? []).map((r: any) => ({
-          id: r.id,
-          agent: r.source_name,
-          task: 'Data ingestion',
-          status: r.status,
+          id: r.run_id,
+          agent: `Coordinator (${r.env_code})`,
+          task: 'Multi-agent pipeline',
+          status: r.status_code,
           started: r.started_at,
-          rows_ingested: r.documents_processed || 0,
-          validation: 'pass'
+          rows_ingested: r.metrics_json?.facts_stored || 0,
+          validation: r.metrics_json?.arbiter_decision === 'APPROVED' ? 'pass' : 'fail',
+          latency_ms: r.metrics_json?.total_latency_ms || 0,
         })));
       }
 
       // validation results
-      const { data: validations, error: valErr } = await (supabase as any)
+      const { data: validations, error: valErr } = await supabase
         .from('validation_results')
         .select('id, fact_id, validator_type, is_valid, validation_score, validated_at')
         .order('validated_at', { ascending: false })
         .limit(10);
       if (valErr) {
-        toast({ title: 'Failed to load validations', description: valErr.message } as any);
+        toast({ title: 'Failed to load validations', description: valErr.message });
       } else if (!cancelled) {
         const grouped = (validations ?? []).reduce((acc: any, v: any) => {
           const suite = v.validator_type;
@@ -92,16 +95,16 @@ export const IngestionMonitor = () => {
 
     load();
 
-    const channel = (supabase as any)
-      .channel('ingestion_runs')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ingestion_runs' }, (payload: any) => {
-        setRecentRuns((prev) => [payload.new, ...prev].slice(0, 10));
+    const channel = supabase
+      .channel('runs_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'runs' }, () => {
+        load();
       })
       .subscribe();
 
     return () => {
       cancelled = true;
-      (supabase as any).removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -184,7 +187,7 @@ export const IngestionMonitor = () => {
 
       {/* Recent Runs */}
       <Card className="p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Ingestion Runs</h2>
+        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Coordinator Runs</h2>
         <div className="space-y-3">
           {recentRuns.map((run) => (
             <div key={run.id} className="p-4 bg-muted/30 rounded-lg">
@@ -200,18 +203,22 @@ export const IngestionMonitor = () => {
                   {run.status}
                 </Badge>
               </div>
-              <div className="grid grid-cols-3 gap-4 text-xs">
+              <div className="grid grid-cols-4 gap-4 text-xs">
                 <div>
                   <span className="text-muted-foreground">Started</span>
                   <p className="font-medium">{new Date(run.started).toLocaleTimeString()}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Rows Ingested</span>
+                  <span className="text-muted-foreground">Facts Stored</span>
                   <p className="font-medium">{run.rows_ingested}</p>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Validation</span>
                   <p className="font-medium capitalize">{run.validation}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Latency</span>
+                  <p className="font-medium">{run.latency_ms}ms</p>
                 </div>
               </div>
             </div>

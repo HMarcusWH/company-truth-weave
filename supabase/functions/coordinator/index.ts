@@ -127,15 +127,15 @@ serve(async (req) => {
       }
     }
 
-    // Step 4: Call solver-agent (if research succeeded)
-    let solverResult: any = null;
+    // Step 4: Call resolver-agent (if research succeeded)
+    let resolverResult: any = null;
     
     if (researchResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
-      console.log('Step 2: Calling solver-agent...');
+      console.log('Step 2: Calling resolver-agent...');
       try {
         agentCallCount++;
-        const solverResponse = await retryWithBackoff(() =>
-          supabase.functions.invoke('solver-agent', {
+        const resolverResponse = await retryWithBackoff(() =>
+          supabase.functions.invoke('resolver-agent', {
             body: {
               entities: researchResult.entities || [],
               facts: researchResult.facts || [],
@@ -144,22 +144,22 @@ serve(async (req) => {
           })
         );
 
-        if (solverResponse.error) {
-          errors.push({ step: 'solver', message: solverResponse.error.message });
+        if (resolverResponse.error) {
+          errors.push({ step: 'resolver', message: resolverResponse.error.message });
         } else {
-          solverResult = solverResponse.data;
-          stepsCompleted.push('solver');
-          console.log('Solver-agent completed successfully');
+          resolverResult = resolverResponse.data;
+          stepsCompleted.push('resolver');
+          console.log('Resolver-agent completed successfully');
         }
       } catch (error: any) {
-        errors.push({ step: 'solver', message: error.message });
+        errors.push({ step: 'resolver', message: error.message });
       }
     }
 
-    // Step 5: Call critic-agent (if solver succeeded)
+    // Step 5: Call critic-agent (if resolver succeeded)
     let criticResult: any = null;
     
-    if (solverResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+    if (resolverResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
       console.log('Step 3: Calling critic-agent...');
       try {
         agentCallCount++;
@@ -210,7 +210,56 @@ serve(async (req) => {
       }
     }
 
-    // Step 7: Determine workflow status
+    // Step 7: Store entities and facts in database (if approved)
+    let entitiesStored = 0;
+    let factsStored = 0;
+    
+    if (arbiterResult?.policy?.decision === 'APPROVED' && resolverResult) {
+      // Store entities
+      if (resolverResult.entities && resolverResult.entities.length > 0) {
+        const { data: insertedEntities, error: entityError } = await supabase
+          .from('entities')
+          .insert(resolverResult.entities.map((e: any) => ({
+            legal_name: e.legal_name,
+            entity_type: e.entity_type,
+            identifiers: e.identifiers || {},
+            trading_names: e.trading_names || [],
+            addresses: e.addresses || [],
+            relationships: e.relationships || [],
+            website: e.website,
+            metadata: { source: 'coordinator', document_id: documentId }
+          })))
+          .select('id');
+        
+        if (!entityError && insertedEntities) {
+          entitiesStored = insertedEntities.length;
+          console.log(`Stored ${entitiesStored} entities`);
+        }
+      }
+
+      // Store facts
+      if (resolverResult.facts && resolverResult.facts.length > 0) {
+        const { data: insertedFacts, error: factError } = await supabase
+          .from('facts')
+          .insert(resolverResult.facts.map((f: any) => ({
+            subject: f.subject,
+            predicate: f.predicate,
+            object: f.object,
+            evidence_text: f.evidence_text,
+            evidence_doc_id: documentId,
+            confidence: f.confidence || 0.8,
+            status: 'verified'
+          })))
+          .select('id');
+        
+        if (!factError && insertedFacts) {
+          factsStored = insertedFacts.length;
+          console.log(`Stored ${factsStored} facts`);
+        }
+      }
+    }
+
+    // Step 8: Determine workflow status
     const totalLatency = Date.now() - startTime;
     const budgetExceeded = agentCallCount >= MAX_AGENT_CALLS || totalLatency >= MAX_LATENCY_MS;
     
@@ -226,11 +275,11 @@ serve(async (req) => {
       });
     }
 
-    // Step 8: Update run status
+    // Step 9: Update run status
     await supabase
       .from('runs')
       .update({
-        status_code: workflowStatus === 'success' ? 'success' : 'partial',
+        status_code: workflowStatus,
         ended_at: new Date().toISOString(),
         metrics_json: {
           workflow_status: workflowStatus,
@@ -239,6 +288,8 @@ serve(async (req) => {
           agent_calls: agentCallCount,
           entities_extracted: researchResult?.entitiesExtracted || 0,
           facts_extracted: researchResult?.factsExtracted || 0,
+          entities_stored: entitiesStored,
+          facts_stored: factsStored,
           arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
           errors_count: errors.length
         }
@@ -248,14 +299,21 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: workflowStatus === 'success',
-        runId,
-        workflow_status: workflowStatus,
-        steps_completed: stepsCompleted,
+        run_id: runId,
+        status: workflowStatus,
         entities_extracted: researchResult?.entitiesExtracted || 0,
         facts_extracted: researchResult?.factsExtracted || 0,
-        arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
+        entities_stored: entitiesStored,
+        facts_stored: factsStored,
+        facts_approved: arbiterResult?.policy?.decision === 'APPROVED' ? (researchResult?.factsExtracted || 0) : 0,
+        blocked_by_arbiter: arbiterResult?.policy?.decision === 'BLOCKED' ? (researchResult?.factsExtracted || 0) : 0,
+        agents_executed: [
+          { agent_name: 'research-agent', status: researchResult ? 'success' : 'failed' },
+          { agent_name: 'resolver-agent', status: resolverResult ? 'success' : 'failed' },
+          { agent_name: 'critic-agent', status: criticResult ? 'success' : 'failed' },
+          { agent_name: 'arbiter-agent', status: arbiterResult ? 'success' : 'failed' }
+        ].filter(a => stepsCompleted.includes(a.agent_name.split('-')[0])),
         total_latency_ms: totalLatency,
-        total_cost_usd: 0.0, // TODO: Calculate based on token usage
         errors
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
