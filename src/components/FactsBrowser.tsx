@@ -1,0 +1,235 @@
+import { useState } from "react";
+import { Database, ExternalLink, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+
+// Mock facts data
+const mockFacts = [
+  {
+    id: "fact1",
+    subject: "Acme Corporation Ltd",
+    predicate: "hasRevenue",
+    object: "$450M",
+    qualifier: "Q4 2024",
+    confidence: 0.98,
+    status: "admitted",
+    evidence_doc: "Q4 2024 Financial Results",
+    evidence_snippet: "announced record revenue of $450M for Q4 2024",
+    created_at: "2024-10-15T14:30:00Z"
+  },
+  {
+    id: "fact2",
+    subject: "Acme Corporation Ltd",
+    predicate: "hasGrowthRate",
+    object: "23%",
+    qualifier: "year-over-year Q4 2024",
+    confidence: 0.98,
+    status: "admitted",
+    evidence_doc: "Q4 2024 Financial Results",
+    evidence_snippet: "representing 23% year-over-year growth",
+    created_at: "2024-10-15T14:30:00Z"
+  },
+  {
+    id: "fact3",
+    subject: "Acme Corporation Ltd",
+    predicate: "hasPartnership",
+    object: "TechVentures Inc",
+    qualifier: "AI sector",
+    confidence: 0.95,
+    status: "admitted",
+    evidence_doc: "New Partnership Announcement",
+    evidence_snippet: "strategic partnership with TechVentures Inc to accelerate innovation in the AI sector",
+    created_at: "2024-08-05T10:00:00Z"
+  },
+  {
+    id: "fact4",
+    subject: "Global Industries PLC",
+    predicate: "hasEmployeeCount",
+    object: "~5,000",
+    qualifier: "2024",
+    confidence: 0.85,
+    status: "quarantined",
+    evidence_doc: "Annual Report 2024",
+    evidence_snippet: "approximately 5,000 employees worldwide",
+    created_at: "2024-09-20T09:15:00Z"
+  }
+];
+
+export const FactsBrowser = () => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedFact, setSelectedFact] = useState<typeof mockFacts[0] | null>(null);
+
+  const filteredFacts = mockFacts.filter(fact =>
+    fact.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    fact.predicate.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    fact.object.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "admitted": return <CheckCircle2 className="h-4 w-4 text-success" />;
+      case "quarantined": return <AlertTriangle className="h-4 w-4 text-warning" />;
+      case "retracted": return <XCircle className="h-4 w-4 text-destructive" />;
+      default: return <Database className="h-4 w-4" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "admitted": return "bg-success text-success-foreground";
+      case "quarantined": return "bg-warning text-warning-foreground";
+      case "retracted": return "bg-destructive text-destructive-foreground";
+      default: return "bg-muted text-muted-foreground";
+    }
+  };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
+      {/* Facts List */}
+      <div className="space-y-4">
+        <Card className="p-4">
+          <Input
+            placeholder="Search facts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </Card>
+
+        <div className="space-y-2">
+          {filteredFacts.map((fact) => (
+            <Card
+              key={fact.id}
+              className={`p-4 cursor-pointer transition-colors hover:bg-accent/50 ${
+                selectedFact?.id === fact.id ? "border-primary bg-accent/30" : ""
+              }`}
+              onClick={() => setSelectedFact(fact)}
+            >
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
+                  {getStatusIcon(fact.status)}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium line-clamp-1">{fact.subject}</p>
+                    <p className="text-xs text-muted-foreground">{fact.predicate}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge className={`text-xs ${getStatusColor(fact.status)}`}>
+                    {fact.status}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {(fact.confidence * 100).toFixed(0)}% confidence
+                  </span>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Fact Detail */}
+      <div>
+        {selectedFact ? (
+          <Card className="p-6">
+            <div className="space-y-6">
+              {/* Header */}
+              <div>
+                <div className="flex items-start justify-between gap-4 mb-4">
+                  <h2 className="text-2xl font-bold text-foreground">Fact Details</h2>
+                  <Badge className={getStatusColor(selectedFact.status)}>
+                    {selectedFact.status}
+                  </Badge>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Triple */}
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-3">Normalized Triple</h3>
+                <div className="space-y-2">
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <span className="text-xs font-medium text-muted-foreground">Subject</span>
+                    <p className="text-sm font-medium">{selectedFact.subject}</p>
+                  </div>
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <span className="text-xs font-medium text-muted-foreground">Predicate</span>
+                    <p className="text-sm font-medium">{selectedFact.predicate}</p>
+                  </div>
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <span className="text-xs font-medium text-muted-foreground">Object</span>
+                    <p className="text-sm font-medium">{selectedFact.object}</p>
+                  </div>
+                  {selectedFact.qualifier && (
+                    <div className="p-3 bg-muted/50 rounded-lg">
+                      <span className="text-xs font-medium text-muted-foreground">Qualifier</span>
+                      <p className="text-sm font-medium">{selectedFact.qualifier}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Evidence */}
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <ExternalLink className="h-4 w-4" />
+                  Evidence & Provenance
+                </h3>
+                <div className="space-y-3">
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <span className="text-xs font-medium text-muted-foreground">Source Document</span>
+                    <p className="text-sm font-medium">{selectedFact.evidence_doc}</p>
+                  </div>
+                  <div className="p-3 bg-accent/20 border border-accent rounded-lg">
+                    <span className="text-xs font-medium text-muted-foreground mb-2 block">
+                      Citation
+                    </span>
+                    <p className="text-sm italic">"{selectedFact.evidence_snippet}"</p>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Metadata */}
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-3">Quality Metrics</h3>
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <span className="text-sm text-muted-foreground">Confidence Score</span>
+                    <Badge variant={selectedFact.confidence >= 0.95 ? "default" : "secondary"}>
+                      {(selectedFact.confidence * 100).toFixed(1)}%
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <span className="text-sm text-muted-foreground">Status</span>
+                    <div className="flex items-center gap-2">
+                      {getStatusIcon(selectedFact.status)}
+                      <span className="text-sm capitalize">{selectedFact.status}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                    <span className="text-sm text-muted-foreground">Created</span>
+                    <span className="text-sm font-mono">
+                      {new Date(selectedFact.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Card>
+        ) : (
+          <Card className="p-12">
+            <div className="text-center text-muted-foreground">
+              <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Select a fact to view details and evidence</p>
+            </div>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+};
