@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { Activity, CheckCircle2, AlertCircle, Clock, Database, TrendingUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 type SystemStats = {
   total_entities: number;
   total_documents: number;
