@@ -2,3 +2,15 @@ project_id = "yazvrhbehgjfhdgcbgsh"
 
 [functions.research-agent]
 verify_jwt = false
+
+[functions.critic-agent]
+verify_jwt = false
+
+[functions.solver-agent]
+verify_jwt = false
+
+[functions.arbiter-agent]
+verify_jwt = false
+
+[functions.coordinator]
+verify_jwt = false
