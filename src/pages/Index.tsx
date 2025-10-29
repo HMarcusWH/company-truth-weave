@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, FileText, Database, Activity, LogOut } from "lucide-react";
+import { Search, FileText, Database, Activity, LogOut, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,9 +8,10 @@ import { CompanySearch } from "@/components/CompanySearch";
 import { DocumentLibrary } from "@/components/DocumentLibrary";
 import { FactsBrowser } from "@/components/FactsBrowser";
 import { IngestionMonitor } from "@/components/IngestionMonitor";
+import { PipelineTest } from "@/components/PipelineTest";
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState("search");
+  const [activeTab, setActiveTab] = useState("test");
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -67,7 +68,11 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-[600px]">
+          <TabsList className="grid w-full grid-cols-5 lg:w-[750px]">
+            <TabsTrigger value="test" className="flex items-center gap-2">
+              <Zap className="h-4 w-4" />
+              <span className="hidden sm:inline">Test</span>
+            </TabsTrigger>
             <TabsTrigger value="search" className="flex items-center gap-2">
               <Search className="h-4 w-4" />
               <span className="hidden sm:inline">Search</span>
@@ -85,6 +90,10 @@ const Index = () => {
               <span className="hidden sm:inline">Monitor</span>
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="test" className="space-y-6">
+            <PipelineTest />
+          </TabsContent>
 
           <TabsContent value="search" className="space-y-6">
             <CompanySearch />
