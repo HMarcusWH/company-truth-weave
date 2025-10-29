@@ -14,16 +14,284 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      documents: {
+        Row: {
+          confidence: number | null
+          content_preview: string | null
+          created_at: string
+          doc_type: Database["public"]["Enums"]["doc_type"]
+          embedding: string | null
+          entity_id: string | null
+          entity_name: string | null
+          full_text: string | null
+          id: string
+          metadata: Json | null
+          published_date: string | null
+          source_url: string | null
+          storage_path: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          confidence?: number | null
+          content_preview?: string | null
+          created_at?: string
+          doc_type: Database["public"]["Enums"]["doc_type"]
+          embedding?: string | null
+          entity_id?: string | null
+          entity_name?: string | null
+          full_text?: string | null
+          id?: string
+          metadata?: Json | null
+          published_date?: string | null
+          source_url?: string | null
+          storage_path?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number | null
+          content_preview?: string | null
+          created_at?: string
+          doc_type?: Database["public"]["Enums"]["doc_type"]
+          embedding?: string | null
+          entity_id?: string | null
+          entity_name?: string | null
+          full_text?: string | null
+          id?: string
+          metadata?: Json | null
+          published_date?: string | null
+          source_url?: string | null
+          storage_path?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      entities: {
+        Row: {
+          addresses: Json | null
+          created_at: string
+          entity_type: Database["public"]["Enums"]["entity_type"]
+          id: string
+          identifiers: Json | null
+          legal_name: string
+          metadata: Json | null
+          relationships: Json | null
+          trading_names: Json | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          addresses?: Json | null
+          created_at?: string
+          entity_type: Database["public"]["Enums"]["entity_type"]
+          id?: string
+          identifiers?: Json | null
+          legal_name: string
+          metadata?: Json | null
+          relationships?: Json | null
+          trading_names?: Json | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          addresses?: Json | null
+          created_at?: string
+          entity_type?: Database["public"]["Enums"]["entity_type"]
+          id?: string
+          identifiers?: Json | null
+          legal_name?: string
+          metadata?: Json | null
+          relationships?: Json | null
+          trading_names?: Json | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
+      facts: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          created_by: string | null
+          evidence_doc_id: string | null
+          evidence_text: string | null
+          evidence_url: string | null
+          id: string
+          object: string
+          predicate: string
+          status: Database["public"]["Enums"]["fact_status"]
+          subject: string
+          updated_at: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          created_by?: string | null
+          evidence_doc_id?: string | null
+          evidence_text?: string | null
+          evidence_url?: string | null
+          id?: string
+          object: string
+          predicate: string
+          status?: Database["public"]["Enums"]["fact_status"]
+          subject: string
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          created_by?: string | null
+          evidence_doc_id?: string | null
+          evidence_text?: string | null
+          evidence_url?: string | null
+          id?: string
+          object?: string
+          predicate?: string
+          status?: Database["public"]["Enums"]["fact_status"]
+          subject?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facts_evidence_doc_id_fkey"
+            columns: ["evidence_doc_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ingestion_runs: {
+        Row: {
+          completed_at: string | null
+          documents_processed: number | null
+          errors: Json | null
+          facts_extracted: number | null
+          id: string
+          metadata: Json | null
+          source_name: string
+          started_at: string
+          status: Database["public"]["Enums"]["ingestion_status"]
+        }
+        Insert: {
+          completed_at?: string | null
+          documents_processed?: number | null
+          errors?: Json | null
+          facts_extracted?: number | null
+          id?: string
+          metadata?: Json | null
+          source_name: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["ingestion_status"]
+        }
+        Update: {
+          completed_at?: string | null
+          documents_processed?: number | null
+          errors?: Json | null
+          facts_extracted?: number | null
+          id?: string
+          metadata?: Json | null
+          source_name?: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["ingestion_status"]
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      validation_results: {
+        Row: {
+          fact_id: string
+          id: string
+          is_valid: boolean
+          issues: Json | null
+          validated_at: string
+          validation_score: number | null
+          validator_type: string
+        }
+        Insert: {
+          fact_id: string
+          id?: string
+          is_valid: boolean
+          issues?: Json | null
+          validated_at?: string
+          validation_score?: number | null
+          validator_type: string
+        }
+        Update: {
+          fact_id?: string
+          id?: string
+          is_valid?: boolean
+          issues?: Json | null
+          validated_at?: string
+          validation_score?: number | null
+          validator_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "validation_results_fact_id_fkey"
+            columns: ["fact_id"]
+            isOneToOne: false
+            referencedRelation: "facts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
+      doc_type:
+        | "filing"
+        | "article"
+        | "press_release"
+        | "financial_report"
+        | "other"
+      entity_type: "company" | "person" | "location" | "product" | "event"
+      fact_status: "pending" | "verified" | "disputed" | "superseded"
+      ingestion_status: "pending" | "running" | "completed" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +418,18 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+      doc_type: [
+        "filing",
+        "article",
+        "press_release",
+        "financial_report",
+        "other",
+      ],
+      entity_type: ["company", "person", "location", "product", "event"],
+      fact_status: ["pending", "verified", "disputed", "superseded"],
+      ingestion_status: ["pending", "running", "completed", "failed"],
+    },
   },
 } as const
