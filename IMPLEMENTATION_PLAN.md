@@ -103,81 +103,139 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 ## Phase 3: Edge Functions for AI Agents (Priority: HIGH) ⏳ TODO
 
-### 3.1 Lovable AI Integration
-**Enable Lovable AI** (already available - uses LOVABLE_API_KEY secret):
-- Default model: `google/gemini-2.5-flash` (balanced cost/performance)
-- Supports structured outputs via tool calling (no raw JSON responses)
-- Rate limits: Handle 429 (rate limit) and 402 (payment required) errors
+**Reference:** Detailed OpenAI API patterns in `docs/OPENAI_INTEGRATION_GUIDE.md`
+
+### 3.1 AI Model Selection Strategy
+
+**Lovable AI vs OpenAI Direct:**
+- **Default:** Use Lovable AI (`google/gemini-2.5-flash`) for most agents - pre-configured, no API key needed
+- **Consider OpenAI Direct** for:
+  - Long context needs (>200K tokens) → Use `gpt-4.1-mini` (1M token context)
+  - Highest quality embeddings → Use `text-embedding-3-large` (3072 dimensions)
+  - Cost optimization for simple tasks → Use `gpt-5-nano`
+
+**Recommended Model Mapping:**
+- `research-agent`: `gpt-4.1-mini` (long documents) OR Lovable AI `google/gemini-2.5-flash`
+- `resolver-agent`: `gpt-5-nano` (simple deduplication)
+- `writer-agent`: `gpt-5-mini` (structured outputs)
+- `critic-agent`: `gpt-5-mini` (reasoning for QA)
+- `arbiter-agent`: `gpt-5-nano` (rule application)
+- `embedding-agent`: `text-embedding-3-large` (best quality vectors)
+
+**CRITICAL: GPT-5+ Parameter Changes:**
+- Use `max_completion_tokens` (NOT `max_tokens`)
+- Do NOT include `temperature` parameter (defaults to 1.0)
+- See OPENAI_INTEGRATION_GUIDE.md Section 1
 
 ### 3.2 Core Agent Functions
 
+**Implementation Pattern:** Use OpenAI Function Calling for structured outputs (OPENAI_INTEGRATION_GUIDE.md Section 3)
+
 **Function: `research-agent`**
-- **Purpose:** Retrieve + cite press releases/filings from web sources
-- **Input:** `{ company_name, domains[], date_range }`
-- **Output:** `{ claims: [{claim, source, normalized, confidence}] }`
-- **Tools:** Web scraping, RSS feeds, API integrations
+- **Purpose:** Extract entities, relationships, facts from documents
+- **Input:** `{ document_url, document_text, company_name }`
+- **Model:** `gpt-4.1-mini` (1M context) OR Lovable AI `google/gemini-2.5-flash`
+- **Tool Use:** Function calling with strict schema:
+  ```typescript
+  {
+    entities: [{ legal_name, entity_type, identifiers: {lei, vat, registry_id}, website }],
+    relationships: [{ from_entity, relationship_type, to_entity, confidence }],
+    facts: [{ subject, predicate, object, confidence, evidence_text }]
+  }
+  ```
+- **Output:** Validated structured data ready for writer-agent
 - **Security:** Public function (verify_jwt = false) with rate limiting
+- **Error Handling:** Exponential backoff for rate limits (OPENAI_INTEGRATION_GUIDE.md Section 9)
 
 **Function: `resolver-agent`**
 - **Purpose:** Deduplicate/merge companies against existing entities
-- **Input:** `{ candidate_company, identifiers[], addresses[] }`
+- **Input:** `{ candidate_entities, identifiers[] }`
+- **Model:** `gpt-5-nano` (fast, simple logic)
 - **Process:**
-  1. Check LEI/VAT/registry IDs first (hard match)
-  2. Hybrid search: vector similarity on name + BM25 on tsvector
-  3. Return matched entity_id or create new
+  1. Check LEI/VAT/registry IDs first (exact match)
+  2. If no match, fuzzy search on legal_name using pg_trgm
+  3. Calculate confidence score (0.0-1.0)
 - **Output:** `{ entity_id, match_confidence, is_new }`
-- **Calls:** `upsert_entity_and_children()` stored proc
+- **Calls:** `upsert_entity_and_children()` stored proc if new entity needed
 
 **Function: `writer-agent`**
-- **Purpose:** Safe database writes via stored procedures
-- **Input:** Structured entity/relationship/document data
-- **Authorization:** Requires auth token with 'admin' or 'agent_writer' role
-- **Calls:** All stored procedures; logs to ingestion_runs
-- **Error handling:** Rollback on constraint violations; return detailed errors
+- **Purpose:** Safe database writes via controlled entry point
+- **Input:** `{ entity_data, document_data, fact_data }`
+- **Model:** `gpt-5-mini` (structured JSON generation)
+- **Authorization:** Requires JWT with 'admin' or 'agent_writer' role
+- **Pattern:** Use function calling to generate validated procedure calls (OPENAI_INTEGRATION_GUIDE.md Section 3)
+- **Calls:** Database insert/update via Supabase client (NOT raw SQL)
+- **Logging:** All operations logged to `ingestion_runs` table
+- **Error handling:** Return detailed errors; never expose raw SQL
 
 **Function: `critic-agent`**
-- **Purpose:** QA checks - contradiction detection, citation validation
-- **Input:** `{ fact_id, evidence_doc_id }`
+- **Purpose:** QA validation - contradiction detection, citation verification
+- **Input:** `{ fact_id }`
+- **Model:** `gpt-5-mini` (reasoning for quality checks)
+- **Tool Use:** Function calling for structured validation output:
+  ```typescript
+  {
+    is_valid: boolean,
+    confidence_score: 0.0-1.0,
+    issues: [{ issue_type, description, severity }],
+    recommendation: 'approve' | 'quarantine' | 'reject'
+  }
+  ```
 - **Checks:**
   - Fact has valid evidence_doc_id
-  - Confidence scores reasonable (0-1)
-  - No logical contradictions (same subject+predicate, different objects)
+  - Confidence scores in range (0.0-1.0)
+  - No contradictions (same subject+predicate, different objects)
   - Required citations present
-- **Output:** `{ status: 'pass'|'warn'|'fail', issues: [] }`
+- **Output:** Validation result stored in `validation_results` table
+- **Pattern:** See OPENAI_INTEGRATION_GUIDE.md Section 3
 
 **Function: `arbiter-agent`**
-- **Purpose:** Policy & safety gate (BLOCK/ALLOW/QUARANTINE)
-- **Input:** `{ proposed_changes: [], critic_results: {} }`
+- **Purpose:** Policy & safety gate (ALLOW/QUARANTINE/BLOCK)
+- **Input:** `{ validation_results }`
+- **Model:** `gpt-5-nano` (simple rule application)
+- **Moderation:** Use OpenAI Moderation API to detect harmful content/PII (OPENAI_INTEGRATION_GUIDE.md Section 8)
 - **Rules:**
-  - BLOCK if contradiction_rate > 0
-  - BLOCK if missing_citations > 0
+  - BLOCK if contradiction detected
+  - BLOCK if missing required citations
   - QUARANTINE if confidence < 0.5
-  - Check PII patterns in raw_text
-- **Output:** `{ decision: 'ALLOW'|'QUARANTINE'|'BLOCK', reason }`
+  - BLOCK if moderation API flags content
+- **Action:** Update `facts.status` to 'verified', 'quarantined', or 'rejected'
+- **Output:** `{ decision, reason, affected_fact_ids }`
 
 **Function: `embedding-agent`**
-- **Purpose:** Generate embeddings for document chunks
-- **Input:** `{ doc_id, chunks: [{text, chunk_index}] }`
-- **Model:** OpenAI text-embedding-3-large (1536 dims) or similar
+- **Purpose:** Generate vector embeddings for document chunks
+- **Input:** `{ document_id, document_text }`
+- **Model:** `text-embedding-3-large` (3072 dims, best quality) OR `text-embedding-3-small` (1536 dims, faster)
 - **Process:**
-  1. Batch embed chunks
-  2. Call `add_doc_chunk_and_embedding()` for each
-  3. Track model version
-- **Output:** `{ chunk_ids: [], model_version_id }`
+  1. Split document into ~500 token chunks
+  2. Batch embed chunks (max 8191 tokens per chunk)
+  3. Store embeddings in `documents.embedding` column (pgvector)
+  4. Track model version
+- **Output:** `{ embedding_count, model_version }`
+- **Pattern:** See OPENAI_INTEGRATION_GUIDE.md Section 7 for chunking strategy
+- **Cost:** text-embedding-3-large is $0.13/1M tokens (as of 2025)
 
-### 3.3 Coordinator Function
+### 3.3 Coordinator Function (TypeScript Multi-Agent Orchestration)
+
+**Note:** OpenAI Agents SDK is Python-only; we implement custom orchestration in TypeScript  
+**Reference:** OPENAI_INTEGRATION_GUIDE.md Section 6 for sequential agent pattern
+
 **Function: `coordinator`**
-- **Purpose:** Orchestrate multi-agent workflows
-- **Input:** `{ task: 'ingest_company', params: {...} }`
-- **Workflow:**
-  1. Research agent → retrieve data
-  2. Resolver agent → find/create entity
-  3. Writer agent → store via stored procs
-  4. Embedding agent → chunk + vectorize documents
-  5. Critic agent → validate facts
-  6. Arbiter agent → approve/quarantine
-  7. Log to ingestion_runs
-- **Output:** `{ run_id, entity_id, status, metrics }`
+- **Purpose:** Orchestrate research → resolve → write → embed → critic → arbiter workflow
+- **Input:** `{ company_name, document_url }`
+- **Implementation Pattern:**
+  ```typescript
+  // Sequential agent execution with error handling
+  1. research-agent → Extract entities/facts from document
+  2. resolver-agent → Deduplicate entities
+  3. writer-agent → Store via safe write path
+  4. embedding-agent → Generate vectors
+  5. critic-agent → Validate facts
+  6. arbiter-agent → Apply policy gates
+  7. Log complete workflow to ingestion_runs
+  ```
+- **Output:** `{ ingestion_run_id, entity_ids, facts_approved, facts_quarantined }`
+- **Error Handling:** Rollback on critical failures; log partial successes
 
 ### 3.4 Edge Function Configuration
 **supabase/config.toml updates:**
