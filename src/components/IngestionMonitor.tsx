@@ -47,30 +47,45 @@ export const IngestionMonitor = () => {
       // recent runs
       const { data: runs, error: runsErr } = await (supabase as any)
         .from('ingestion_runs')
-        .select('id, agent, task, status, started_at, finished_at, items_processed')
+        .select('id, source_name, status, started_at, completed_at, documents_processed')
         .order('started_at', { ascending: false })
         .limit(10);
       if (runsErr) {
         toast({ title: 'Failed to load runs', description: runsErr.message } as any);
       } else if (!cancelled) {
-        setRecentRuns(runs ?? []);
+        setRecentRuns((runs ?? []).map((r: any) => ({
+          id: r.id,
+          agent: r.source_name,
+          task: 'Data ingestion',
+          status: r.status,
+          started: r.started_at,
+          rows_ingested: r.documents_processed || 0,
+          validation: 'pass'
+        })));
       }
 
       // validation results
       const { data: validations, error: valErr } = await (supabase as any)
         .from('validation_results')
-        .select('id, run_id, suite_name, status, passed, failed, total, created_at')
-        .order('created_at', { ascending: false })
+        .select('id, fact_id, validator_type, is_valid, validation_score, validated_at')
+        .order('validated_at', { ascending: false })
         .limit(10);
       if (valErr) {
         toast({ title: 'Failed to load validations', description: valErr.message } as any);
       } else if (!cancelled) {
-        setValidationSuites((validations ?? []).map(v => ({
-          name: v.suite_name,
-          status: v.status,
-          tests_passed: v.passed,
-          tests_total: v.total,
-          last_run: v.created_at,
+        const grouped = (validations ?? []).reduce((acc: any, v: any) => {
+          const suite = v.validator_type;
+          if (!acc[suite]) acc[suite] = { passed: 0, total: 0, last_run: v.validated_at };
+          acc[suite].total++;
+          if (v.is_valid) acc[suite].passed++;
+          return acc;
+        }, {});
+        setValidationSuites(Object.entries(grouped).map(([name, data]: [string, any]) => ({
+          name,
+          status: data.passed === data.total ? 'pass' : data.passed > 0 ? 'warn' : 'fail',
+          tests_passed: data.passed,
+          tests_total: data.total,
+          last_run: data.last_run,
         })));
       }
     };

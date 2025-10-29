@@ -31,7 +31,7 @@ export const FactsBrowser = () => {
     const load = async () => {
       const { data, error } = await (supabase as any)
         .from('facts')
-        .select('id, subject, predicate, object_text, confidence, status, created_at, documents:document_id(title, raw_text)')
+        .select('id, subject, predicate, object, confidence, status, created_at, evidence_text, documents:evidence_doc_id(title, full_text)')
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) {
@@ -43,11 +43,11 @@ export const FactsBrowser = () => {
         id: f.id,
         subject: f.subject,
         predicate: f.predicate,
-        object: f.object_text,
+        object: f.object,
         confidence: Number(f.confidence ?? 0),
         status: f.status,
         evidence_doc: f.documents?.title,
-        evidence_snippet: f.documents?.raw_text ? f.documents.raw_text.slice(0, 160) + '…' : undefined,
+        evidence_snippet: f.evidence_text || (f.documents?.full_text ? f.documents.full_text.slice(0, 160) + '…' : undefined),
         created_at: f.created_at,
       }));
       setFacts(mapped);

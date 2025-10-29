@@ -55,9 +55,9 @@ export const PipelineTest = () => {
         .from('documents')
         .insert({
           title: documentText.split('\n')[0].slice(0, 100),
-          raw_text: documentText,
+          full_text: documentText,
           doc_type: 'press_release',
-          published_at: new Date().toISOString(),
+          published_date: new Date().toISOString().split('T')[0],
         })
         .select()
         .single();

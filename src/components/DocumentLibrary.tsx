@@ -30,8 +30,8 @@ export const DocumentLibrary = () => {
     const load = async () => {
       const { data, error } = await (supabase as any)
         .from('documents')
-        .select('id, title, doc_type, published_at, source_url, raw_text, confidence, entities:entity_id(legal_name)')
-        .order('published_at', { ascending: false })
+        .select('id, title, doc_type, published_date, source_url, full_text, confidence, entity_name')
+        .order('published_date', { ascending: false })
         .limit(100);
       if (error) {
         toast({ title: 'Failed to load documents', description: error.message } as any);
@@ -42,9 +42,9 @@ export const DocumentLibrary = () => {
         id: d.id,
         title: d.title,
         doc_type: d.doc_type,
-        entity_name: d.entities?.legal_name,
-        published_date: d.published_at ? new Date(d.published_at).toISOString().slice(0,10) : undefined,
-        content_preview: d.raw_text?.slice(0, 280),
+        entity_name: d.entity_name,
+        published_date: d.published_date,
+        content_preview: d.full_text?.slice(0, 280),
         source_url: d.source_url,
         confidence: d.confidence ?? undefined,
       }));

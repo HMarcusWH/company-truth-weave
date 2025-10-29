@@ -33,7 +33,7 @@ export const CompanySearch = () => {
       const q = searchQuery.trim();
       let query = (supabase as any)
         .from('entities')
-        .select('id, legal_name, status, entity_identifiers(id_type,id_value), entity_aliases(alias), entity_addresses(line1,city,country)')
+        .select('*')
         .order('updated_at', { ascending: false })
         .limit(50);
 
@@ -51,14 +51,14 @@ export const CompanySearch = () => {
       const mapped: Company[] = (data ?? []).map((row: any) => ({
         id: row.id,
         legal_name: row.legal_name,
-        status: row.status || 'active',
-        trading_names: (row.entity_aliases || []).map((a: any) => a.alias),
-        legal_form: 'Company',
+        status: 'active',
+        trading_names: Array.isArray(row.trading_names) ? row.trading_names : [],
+        legal_form: row.entity_type || 'Company',
         founded_on: undefined,
-        website: undefined,
-        identifiers: (row.entity_identifiers || []).map((i: any) => ({ type: i.id_type, value: i.id_value, verified: true })),
-        addresses: (row.entity_addresses || []).map((ad: any) => ({ type: 'registered', lines: [ad.line1].filter(Boolean), locality: ad.city, country: ad.country })),
-        relationships: [],
+        website: row.website,
+        identifiers: Object.entries(row.identifiers || {}).map(([type, value]) => ({ type, value: String(value), verified: true })),
+        addresses: Array.isArray(row.addresses) ? row.addresses : [],
+        relationships: Array.isArray(row.relationships) ? row.relationships : [],
       }));
 
       setCompanies(mapped);
