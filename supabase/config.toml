@@ -6,7 +6,7 @@ verify_jwt = false
 [functions.critic-agent]
 verify_jwt = false
 
-[functions.solver-agent]
+[functions.resolver-agent]
 verify_jwt = false
 
 [functions.arbiter-agent]

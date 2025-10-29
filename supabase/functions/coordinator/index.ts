@@ -145,7 +145,18 @@ serve(async (req) => {
         );
 
         if (resolverResponse.error) {
-          errors.push({ step: 'resolver', message: resolverResponse.error.message });
+          // Fail fast if function not found
+          if (resolverResponse.error.message?.includes('not found') || 
+              resolverResponse.error.message?.includes('FunctionsRelayError')) {
+            errors.push({ 
+              step: 'resolver', 
+              message: 'resolver-agent function not found or not deployed' 
+            });
+            console.error('Resolver function missing - skipping retries');
+            // Don't retry, continue to finalize
+          } else {
+            errors.push({ step: 'resolver', message: resolverResponse.error.message });
+          }
         } else {
           resolverResult = resolverResponse.data;
           stepsCompleted.push('resolver');
@@ -210,51 +221,75 @@ serve(async (req) => {
       }
     }
 
-    // Step 7: Store entities and facts in database (if approved)
+    // Step 7: Store entities (after resolver, before arbiter)
     let entitiesStored = 0;
-    let factsStored = 0;
     
-    if (arbiterResult?.policy?.decision === 'APPROVED' && resolverResult) {
-      // Store entities
-      if (resolverResult.entities && resolverResult.entities.length > 0) {
+    if (resolverResult?.normalized?.normalized_entities) {
+      const entitiesToStore = resolverResult.normalized.normalized_entities;
+      
+      if (entitiesToStore.length > 0) {
         const { data: insertedEntities, error: entityError } = await supabase
           .from('entities')
-          .insert(resolverResult.entities.map((e: any) => ({
-            legal_name: e.legal_name,
+          .insert(entitiesToStore.map((e: any) => ({
+            legal_name: e.canonical_name || e.original_name,
             entity_type: e.entity_type,
-            identifiers: e.identifiers || {},
-            trading_names: e.trading_names || [],
-            addresses: e.addresses || [],
-            relationships: e.relationships || [],
-            website: e.website,
-            metadata: { source: 'coordinator', document_id: documentId }
+            identifiers: e.derived?.identifiers || {},
+            trading_names: e.original_name !== e.canonical_name ? [e.original_name] : [],
+            addresses: e.derived?.addresses || [],
+            relationships: e.derived?.relationships || [],
+            website: e.derived?.website,
+            metadata: { 
+              source: 'coordinator', 
+              document_id: documentId,
+              run_id: runId,
+              original_name: e.original_name
+            }
           })))
           .select('id');
         
         if (!entityError && insertedEntities) {
           entitiesStored = insertedEntities.length;
-          console.log(`Stored ${entitiesStored} entities`);
+          console.log(`Stored ${entitiesStored} entities after resolver`);
+        } else if (entityError) {
+          console.error('Error storing entities:', entityError);
+          errors.push({ step: 'entity-storage', message: entityError.message });
         }
       }
+    }
 
-      // Store facts
-      if (resolverResult.facts && resolverResult.facts.length > 0) {
+    // Step 8: Store facts (only if arbiter approved)
+    let factsStored = 0;
+    
+    if (arbiterResult?.policy?.decision === 'APPROVED' && resolverResult?.normalized?.normalized_facts) {
+      const factsToStore = resolverResult.normalized.normalized_facts;
+      
+      if (factsToStore.length > 0) {
         const { data: insertedFacts, error: factError } = await supabase
           .from('facts')
-          .insert(resolverResult.facts.map((f: any) => ({
-            subject: f.subject,
-            predicate: f.predicate,
-            object: f.object,
-            evidence_text: f.evidence_text,
+          .insert(factsToStore.map((f: any) => ({
+            subject: f.normalized_statement?.split(' ')[0] || f.original_statement.split(' ')[0],
+            predicate: 'states',
+            object: f.normalized_statement || f.original_statement,
+            evidence_text: f.original_statement,
             evidence_doc_id: documentId,
-            confidence: f.confidence || 0.8,
-            status: 'verified'
+            confidence: f.confidence_numeric || 0.8,
+            status: 'approved',
+            created_by: null,
+            metadata: { 
+              source: 'coordinator',
+              run_id: runId,
+              normalized_by: 'resolver-agent',
+              approved_by: 'arbiter-agent'
+            }
           })))
           .select('id');
         
         if (!factError && insertedFacts) {
           factsStored = insertedFacts.length;
-          console.log(`Stored ${factsStored} facts`);
+          console.log(`Stored ${factsStored} facts after arbiter approval`);
+        } else if (factError) {
+          console.error('Error storing facts:', factError);
+          errors.push({ step: 'fact-storage', message: factError.message });
         }
       }
     }
@@ -286,8 +321,8 @@ serve(async (req) => {
           steps_completed: stepsCompleted,
           total_latency_ms: totalLatency,
           agent_calls: agentCallCount,
-          entities_extracted: researchResult?.entitiesExtracted || 0,
-          facts_extracted: researchResult?.factsExtracted || 0,
+          entities_extracted: researchResult?.entities?.length || 0,
+          facts_extracted: researchResult?.facts?.length || 0,
           entities_stored: entitiesStored,
           facts_stored: factsStored,
           arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
@@ -301,12 +336,12 @@ serve(async (req) => {
         success: workflowStatus === 'success',
         run_id: runId,
         status: workflowStatus,
-        entities_extracted: researchResult?.entitiesExtracted || 0,
-        facts_extracted: researchResult?.factsExtracted || 0,
+        entities_extracted: researchResult?.entities?.length || 0,
+        facts_extracted: researchResult?.facts?.length || 0,
         entities_stored: entitiesStored,
         facts_stored: factsStored,
-        facts_approved: arbiterResult?.policy?.decision === 'APPROVED' ? (researchResult?.factsExtracted || 0) : 0,
-        blocked_by_arbiter: arbiterResult?.policy?.decision === 'BLOCKED' ? (researchResult?.factsExtracted || 0) : 0,
+        facts_approved: arbiterResult?.policy?.decision === 'APPROVED' ? factsStored : 0,
+        blocked_by_arbiter: arbiterResult?.policy?.decision === 'BLOCKED' ? (researchResult?.facts?.length || 0) : 0,
         agents_executed: [
           { agent_name: 'research-agent', status: researchResult ? 'success' : 'failed' },
           { agent_name: 'resolver-agent', status: resolverResult ? 'success' : 'failed' },

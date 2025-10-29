@@ -31,7 +31,7 @@ serve(async (req) => {
     const { data: agentData, error: agentError } = await supabase
       .from('agent_definitions')
       .select('agent_id, name')
-      .eq('name', 'solver-agent')
+      .eq('name', 'resolver-agent')
       .single();
 
     if (agentError || !agentData) {
@@ -215,7 +215,7 @@ serve(async (req) => {
         run_id: runId,
         agent_id: agentData.agent_id,
         prompt_version_id: bindingData.prompt_version_id,
-        node_id: 'solver-agent',
+        node_id: 'resolver-agent',
         rendered_prompt_text: systemPrompt,
         input_vars_json: { 
           entitiesCount: entities?.length || 0, 
@@ -260,7 +260,7 @@ serve(async (req) => {
       const guardrailStatus = normalizedData.unknown_values.length === 0 ? 'pass' : 'warn';
       await supabase.from('guardrail_results').insert({
         node_run_id: nodeRunData.node_run_id,
-        suite: 'solver-normalization',
+        suite: 'resolver-normalization',
         status_code: guardrailStatus,
         details_json: {
           unknown_values: normalizedData.unknown_values,
@@ -303,7 +303,7 @@ serve(async (req) => {
     );
 
   } catch (error: any) {
-    console.error('Unexpected error in solver-agent:', error);
+    console.error('Unexpected error in resolver-agent:', error);
     return new Response(
       JSON.stringify({ error: error.message || 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
