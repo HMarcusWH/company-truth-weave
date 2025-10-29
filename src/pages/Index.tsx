@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Search, Building2, FileText, Database, Activity } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { Search, FileText, Database, Activity, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/hooks/useAuth";
 import { CompanySearch } from "@/components/CompanySearch";
 import { DocumentLibrary } from "@/components/DocumentLibrary";
 import { FactsBrowser } from "@/components/FactsBrowser";
@@ -10,6 +11,29 @@ import { IngestionMonitor } from "@/components/IngestionMonitor";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("search");
+  const { user, loading, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate("/auth");
+    }
+  }, [user, loading, navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Database className="h-12 w-12 text-primary mx-auto mb-4 animate-pulse" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -28,9 +52,13 @@ const Index = () => {
             </div>
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Activity className="h-4 w-4 text-success" />
+                <Activity className="h-4 w-4 text-green-500" />
                 <span>System Active</span>
               </div>
+              <Button variant="outline" size="sm" onClick={signOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </Button>
             </div>
           </div>
         </div>
