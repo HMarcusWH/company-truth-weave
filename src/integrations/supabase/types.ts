@@ -14,6 +14,221 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_definitions: {
+        Row: {
+          agent_id: string
+          budgets_json: Json | null
+          created_at: string
+          max_tokens: number | null
+          model_family_code: string
+          name: string
+          params_json: Json | null
+          role_kind_code: string
+          tools_allowed: string[] | null
+        }
+        Insert: {
+          agent_id?: string
+          budgets_json?: Json | null
+          created_at?: string
+          max_tokens?: number | null
+          model_family_code: string
+          name: string
+          params_json?: Json | null
+          role_kind_code: string
+          tools_allowed?: string[] | null
+        }
+        Update: {
+          agent_id?: string
+          budgets_json?: Json | null
+          created_at?: string
+          max_tokens?: number | null
+          model_family_code?: string
+          name?: string
+          params_json?: Json | null
+          role_kind_code?: string
+          tools_allowed?: string[] | null
+        }
+        Relationships: []
+      }
+      approval_policies: {
+        Row: {
+          created_at: string
+          min_approvers: number
+          policy_id: string
+          required_roles: string[] | null
+          scope: string
+        }
+        Insert: {
+          created_at?: string
+          min_approvers?: number
+          policy_id?: string
+          required_roles?: string[] | null
+          scope: string
+        }
+        Update: {
+          created_at?: string
+          min_approvers?: number
+          policy_id?: string
+          required_roles?: string[] | null
+          scope?: string
+        }
+        Relationships: []
+      }
+      change_requests: {
+        Row: {
+          applied_at: string | null
+          approver_id: string | null
+          cr_id: string
+          created_at: string
+          diff_summary: string | null
+          kind: string
+          proposed_by: string | null
+          risk_level: string | null
+          state: string
+          target_id: string
+        }
+        Insert: {
+          applied_at?: string | null
+          approver_id?: string | null
+          cr_id?: string
+          created_at?: string
+          diff_summary?: string | null
+          kind: string
+          proposed_by?: string | null
+          risk_level?: string | null
+          state?: string
+          target_id: string
+        }
+        Update: {
+          applied_at?: string | null
+          approver_id?: string | null
+          cr_id?: string
+          created_at?: string
+          diff_summary?: string | null
+          kind?: string
+          proposed_by?: string | null
+          risk_level?: string | null
+          state?: string
+          target_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "change_requests_approver_id_fkey"
+            columns: ["approver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "change_requests_proposed_by_fkey"
+            columns: ["proposed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      code_sets: {
+        Row: {
+          code_set_id: string
+          created_at: string | null
+          description: string | null
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          code_set_id?: string
+          created_at?: string | null
+          description?: string | null
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          code_set_id?: string
+          created_at?: string | null
+          description?: string | null
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      code_values: {
+        Row: {
+          code: string
+          code_set_id: string
+          code_value_id: string
+          created_at: string | null
+          is_active: boolean | null
+          label: string
+          metadata: Json | null
+          sort_order: number | null
+        }
+        Insert: {
+          code: string
+          code_set_id: string
+          code_value_id?: string
+          created_at?: string | null
+          is_active?: boolean | null
+          label: string
+          metadata?: Json | null
+          sort_order?: number | null
+        }
+        Update: {
+          code?: string
+          code_set_id?: string
+          code_value_id?: string
+          created_at?: string | null
+          is_active?: boolean | null
+          label?: string
+          metadata?: Json | null
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "code_values_code_set_id_fkey"
+            columns: ["code_set_id"]
+            isOneToOne: false
+            referencedRelation: "code_sets"
+            referencedColumns: ["code_set_id"]
+          },
+        ]
+      }
+      decision_records: {
+        Row: {
+          consequences: string | null
+          context: string | null
+          created_at: string
+          decision: string | null
+          decision_record_id: string
+          links: string[] | null
+          options: Json | null
+          subject_ref: string | null
+        }
+        Insert: {
+          consequences?: string | null
+          context?: string | null
+          created_at?: string
+          decision?: string | null
+          decision_record_id?: string
+          links?: string[] | null
+          options?: Json | null
+          subject_ref?: string | null
+        }
+        Update: {
+          consequences?: string | null
+          context?: string | null
+          created_at?: string
+          decision?: string | null
+          decision_record_id?: string
+          links?: string[] | null
+          options?: Json | null
+          subject_ref?: string | null
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           confidence: number | null
@@ -171,6 +386,41 @@ export type Database = {
           },
         ]
       }
+      guardrail_results: {
+        Row: {
+          created_at: string
+          details_json: Json | null
+          node_run_id: string | null
+          result_id: string
+          status_code: string
+          suite: string
+        }
+        Insert: {
+          created_at?: string
+          details_json?: Json | null
+          node_run_id?: string | null
+          result_id?: string
+          status_code: string
+          suite: string
+        }
+        Update: {
+          created_at?: string
+          details_json?: Json | null
+          node_run_id?: string | null
+          result_id?: string
+          status_code?: string
+          suite?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guardrail_results_node_run_id_fkey"
+            columns: ["node_run_id"]
+            isOneToOne: false
+            referencedRelation: "node_runs"
+            referencedColumns: ["node_run_id"]
+          },
+        ]
+      }
       ingestion_runs: {
         Row: {
           completed_at: string | null
@@ -207,6 +457,126 @@ export type Database = {
         }
         Relationships: []
       }
+      message_logs: {
+        Row: {
+          content_text: string | null
+          created_at: string
+          message_id: string
+          node_run_id: string
+          role_code: string
+          tool_args_json: Json | null
+          tool_name: string | null
+        }
+        Insert: {
+          content_text?: string | null
+          created_at?: string
+          message_id?: string
+          node_run_id: string
+          role_code: string
+          tool_args_json?: Json | null
+          tool_name?: string | null
+        }
+        Update: {
+          content_text?: string | null
+          created_at?: string
+          message_id?: string
+          node_run_id?: string
+          role_code?: string
+          tool_args_json?: Json | null
+          tool_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_logs_node_run_id_fkey"
+            columns: ["node_run_id"]
+            isOneToOne: false
+            referencedRelation: "node_runs"
+            referencedColumns: ["node_run_id"]
+          },
+        ]
+      }
+      node_runs: {
+        Row: {
+          agent_id: string | null
+          created_at: string
+          error_message: string | null
+          input_vars_json: Json | null
+          latency_ms: number | null
+          model_family_code: string | null
+          model_params_json: Json | null
+          node_id: string
+          node_run_id: string
+          outputs_json: Json | null
+          prompt_version_id: string | null
+          rendered_prompt_text: string | null
+          run_id: string
+          status_code: string
+          tokens_input: number | null
+          tokens_output: number | null
+          tool_calls_json: Json | null
+        }
+        Insert: {
+          agent_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          input_vars_json?: Json | null
+          latency_ms?: number | null
+          model_family_code?: string | null
+          model_params_json?: Json | null
+          node_id: string
+          node_run_id?: string
+          outputs_json?: Json | null
+          prompt_version_id?: string | null
+          rendered_prompt_text?: string | null
+          run_id: string
+          status_code?: string
+          tokens_input?: number | null
+          tokens_output?: number | null
+          tool_calls_json?: Json | null
+        }
+        Update: {
+          agent_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          input_vars_json?: Json | null
+          latency_ms?: number | null
+          model_family_code?: string | null
+          model_params_json?: Json | null
+          node_id?: string
+          node_run_id?: string
+          outputs_json?: Json | null
+          prompt_version_id?: string | null
+          rendered_prompt_text?: string | null
+          run_id?: string
+          status_code?: string
+          tokens_input?: number | null
+          tokens_output?: number | null
+          tool_calls_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "node_runs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agent_definitions"
+            referencedColumns: ["agent_id"]
+          },
+          {
+            foreignKeyName: "node_runs_prompt_version_id_fkey"
+            columns: ["prompt_version_id"]
+            isOneToOne: false
+            referencedRelation: "prompt_versions"
+            referencedColumns: ["prompt_version_id"]
+          },
+          {
+            foreignKeyName: "node_runs_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "runs"
+            referencedColumns: ["run_id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -230,6 +600,348 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      prompt_bindings: {
+        Row: {
+          agent_id: string
+          binding_id: string
+          constraints_json: Json | null
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          env_code: string
+          prompt_version_id: string
+          rollout_id: string | null
+          traffic_weight: number
+        }
+        Insert: {
+          agent_id: string
+          binding_id?: string
+          constraints_json?: Json | null
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          env_code: string
+          prompt_version_id: string
+          rollout_id?: string | null
+          traffic_weight?: number
+        }
+        Update: {
+          agent_id?: string
+          binding_id?: string
+          constraints_json?: Json | null
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          env_code?: string
+          prompt_version_id?: string
+          rollout_id?: string | null
+          traffic_weight?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prompt_bindings_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agent_definitions"
+            referencedColumns: ["agent_id"]
+          },
+          {
+            foreignKeyName: "prompt_bindings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prompt_bindings_prompt_version_id_fkey"
+            columns: ["prompt_version_id"]
+            isOneToOne: false
+            referencedRelation: "prompt_versions"
+            referencedColumns: ["prompt_version_id"]
+          },
+          {
+            foreignKeyName: "prompt_bindings_rollout_id_fkey"
+            columns: ["rollout_id"]
+            isOneToOne: false
+            referencedRelation: "rollouts"
+            referencedColumns: ["rollout_id"]
+          },
+        ]
+      }
+      prompt_metrics_daily: {
+        Row: {
+          calls: number
+          contradiction_rate: number | null
+          date: string
+          error_rate: number | null
+          latency_p95: number | null
+          pass_rate: number | null
+          prompt_version_id: string
+          rollback_count: number
+        }
+        Insert: {
+          calls?: number
+          contradiction_rate?: number | null
+          date: string
+          error_rate?: number | null
+          latency_p95?: number | null
+          pass_rate?: number | null
+          prompt_version_id: string
+          rollback_count?: number
+        }
+        Update: {
+          calls?: number
+          contradiction_rate?: number | null
+          date?: string
+          error_rate?: number | null
+          latency_p95?: number | null
+          pass_rate?: number | null
+          prompt_version_id?: string
+          rollback_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prompt_metrics_daily_prompt_version_id_fkey"
+            columns: ["prompt_version_id"]
+            isOneToOne: false
+            referencedRelation: "prompt_versions"
+            referencedColumns: ["prompt_version_id"]
+          },
+        ]
+      }
+      prompt_partials: {
+        Row: {
+          content_sha256: string | null
+          content_text: string
+          created_at: string
+          lang: string | null
+          name: string
+          partial_id: string
+          tags: string[] | null
+          version: string
+        }
+        Insert: {
+          content_sha256?: string | null
+          content_text: string
+          created_at?: string
+          lang?: string | null
+          name: string
+          partial_id?: string
+          tags?: string[] | null
+          version?: string
+        }
+        Update: {
+          content_sha256?: string | null
+          content_text?: string
+          created_at?: string
+          lang?: string | null
+          name?: string
+          partial_id?: string
+          tags?: string[] | null
+          version?: string
+        }
+        Relationships: []
+      }
+      prompt_templates: {
+        Row: {
+          created_at: string
+          default_lang: string | null
+          modality_code: string
+          name: string
+          owner_user_id: string | null
+          prompt_template_id: string
+          purpose: string | null
+          role_type_code: string
+          task_domain: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_lang?: string | null
+          modality_code: string
+          name: string
+          owner_user_id?: string | null
+          prompt_template_id?: string
+          purpose?: string | null
+          role_type_code: string
+          task_domain?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_lang?: string | null
+          modality_code?: string
+          name?: string
+          owner_user_id?: string | null
+          prompt_template_id?: string
+          purpose?: string | null
+          role_type_code?: string
+          task_domain?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prompt_templates_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      prompt_versions: {
+        Row: {
+          blocks_json: Json | null
+          canary_pct: number
+          change_summary: string | null
+          content_embedding: string | null
+          content_sha256: string | null
+          content_text: string
+          created_at: string
+          created_by: string | null
+          is_default: boolean
+          output_schema_json: Json | null
+          prompt_template_id: string
+          prompt_version_id: string
+          safety_policies: string[] | null
+          semver: string
+          state_code: string
+          variables_json: Json | null
+        }
+        Insert: {
+          blocks_json?: Json | null
+          canary_pct?: number
+          change_summary?: string | null
+          content_embedding?: string | null
+          content_sha256?: string | null
+          content_text: string
+          created_at?: string
+          created_by?: string | null
+          is_default?: boolean
+          output_schema_json?: Json | null
+          prompt_template_id: string
+          prompt_version_id?: string
+          safety_policies?: string[] | null
+          semver: string
+          state_code?: string
+          variables_json?: Json | null
+        }
+        Update: {
+          blocks_json?: Json | null
+          canary_pct?: number
+          change_summary?: string | null
+          content_embedding?: string | null
+          content_sha256?: string | null
+          content_text?: string
+          created_at?: string
+          created_by?: string | null
+          is_default?: boolean
+          output_schema_json?: Json | null
+          prompt_template_id?: string
+          prompt_version_id?: string
+          safety_policies?: string[] | null
+          semver?: string
+          state_code?: string
+          variables_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prompt_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prompt_versions_prompt_template_id_fkey"
+            columns: ["prompt_template_id"]
+            isOneToOne: false
+            referencedRelation: "prompt_templates"
+            referencedColumns: ["prompt_template_id"]
+          },
+        ]
+      }
+      rollouts: {
+        Row: {
+          created_at: string
+          env_code: string
+          name: string
+          rollout_id: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          env_code: string
+          name: string
+          rollout_id?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          env_code?: string
+          name?: string
+          rollout_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      runs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          decision_record_id: string | null
+          ended_at: string | null
+          env_code: string
+          metrics_json: Json | null
+          run_id: string
+          started_at: string
+          status_code: string
+          workflow_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          decision_record_id?: string | null
+          ended_at?: string | null
+          env_code: string
+          metrics_json?: Json | null
+          run_id?: string
+          started_at?: string
+          status_code?: string
+          workflow_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          decision_record_id?: string | null
+          ended_at?: string | null
+          env_code?: string
+          metrics_json?: Json | null
+          run_id?: string
+          started_at?: string
+          status_code?: string
+          workflow_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "runs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "runs_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_templates"
+            referencedColumns: ["workflow_id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -290,11 +1002,53 @@ export type Database = {
           },
         ]
       }
+      workflow_templates: {
+        Row: {
+          created_at: string
+          description: string | null
+          graph_json: Json
+          name: string
+          owner_user_id: string | null
+          version: string
+          workflow_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          graph_json: Json
+          name: string
+          owner_user_id?: string | null
+          version: string
+          workflow_id?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          graph_json?: Json
+          name?: string
+          owner_user_id?: string | null
+          version?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_templates_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      fk_code_value_ok: {
+        Args: { p_code: string; p_set: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
