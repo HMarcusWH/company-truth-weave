@@ -1,75 +1,92 @@
-import { Activity, CheckCircle2, AlertCircle, Clock, Database, TrendingUp } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-
-// Mock monitoring data
-const systemStats = {
-  total_entities: 2847,
-  total_documents: 12453,
-  total_facts: 34821,
-  active_agents: 7,
-  last_run: "2024-10-29T14:30:00Z"
+type SystemStats = {
+  total_entities: number;
+  total_documents: number;
+  total_facts: number;
+  active_agents: number;
+  last_run?: string;
 };
 
-const recentRuns = [
-  {
-    id: "run1",
-    agent: "Researcher Agent",
-    task: "Press Release Crawl",
-    status: "success",
-    started: "2024-10-29T14:30:00Z",
-    ended: "2024-10-29T14:45:00Z",
-    rows_ingested: 47,
-    validation: "pass"
-  },
-  {
-    id: "run2",
-    agent: "Resolver Agent",
-    task: "Entity Deduplication",
-    status: "success",
-    started: "2024-10-29T13:00:00Z",
-    ended: "2024-10-29T13:20:00Z",
-    rows_ingested: 23,
-    validation: "pass"
-  },
-  {
-    id: "run3",
-    agent: "Writer Agent",
-    task: "Fact Extraction",
-    status: "warning",
-    started: "2024-10-29T12:00:00Z",
-    ended: "2024-10-29T12:15:00Z",
-    rows_ingested: 156,
-    validation: "warn"
-  }
-];
-
-const validationSuites = [
-  {
-    name: "entity_identifiers.default",
-    status: "pass",
-    tests_passed: 6,
-    tests_total: 6,
-    last_run: "2024-10-29T14:45:00Z"
-  },
-  {
-    name: "entities.default",
-    status: "pass",
-    tests_passed: 3,
-    tests_total: 3,
-    last_run: "2024-10-29T14:45:00Z"
-  },
-  {
-    name: "documents.freshness",
-    status: "warn",
-    tests_passed: 2,
-    tests_total: 3,
-    last_run: "2024-10-29T14:45:00Z"
-  }
-];
-
 export const IngestionMonitor = () => {
+  const [systemStats, setSystemStats] = useState<SystemStats>({
+    total_entities: 0,
+    total_documents: 0,
+    total_facts: 0,
+    active_agents: 0,
+  });
+  const [recentRuns, setRecentRuns] = useState<any[]>([]);
+  const [validationSuites, setValidationSuites] = useState<any[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      // counts
+      const [entitiesCount, documentsCount, factsCount] = await Promise.all([
+        (supabase as any).from('entities').select('*', { count: 'exact', head: true }),
+        (supabase as any).from('documents').select('*', { count: 'exact', head: true }),
+        (supabase as any).from('facts').select('*', { count: 'exact', head: true }),
+      ]);
+      if (entitiesCount.error || documentsCount.error || factsCount.error) {
+        const err = entitiesCount.error || documentsCount.error || factsCount.error;
+        toast({ title: 'Failed to load stats', description: err.message } as any);
+      }
+      if (cancelled) return;
+      setSystemStats((prev) => ({
+        ...prev,
+        total_entities: entitiesCount.count ?? 0,
+        total_documents: documentsCount.count ?? 0,
+        total_facts: factsCount.count ?? 0,
+      }));
+
+      // recent runs
+      const { data: runs, error: runsErr } = await (supabase as any)
+        .from('ingestion_runs')
+        .select('id, agent, task, status, started_at, finished_at, items_processed')
+        .order('started_at', { ascending: false })
+        .limit(10);
+      if (runsErr) {
+        toast({ title: 'Failed to load runs', description: runsErr.message } as any);
+      } else if (!cancelled) {
+        setRecentRuns(runs ?? []);
+      }
+
+      // validation results
+      const { data: validations, error: valErr } = await (supabase as any)
+        .from('validation_results')
+        .select('id, run_id, suite_name, status, passed, failed, total, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (valErr) {
+        toast({ title: 'Failed to load validations', description: valErr.message } as any);
+      } else if (!cancelled) {
+        setValidationSuites((validations ?? []).map(v => ({
+          name: v.suite_name,
+          status: v.status,
+          tests_passed: v.passed,
+          tests_total: v.total,
+          last_run: v.created_at,
+        })));
+      }
+    };
+
+    load();
+
+    const channel = (supabase as any)
+      .channel('ingestion_runs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ingestion_runs' }, (payload: any) => {
+        setRecentRuns((prev) => [payload.new, ...prev].slice(0, 10));
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      (supabase as any).removeChannel(channel);
+    };
+  }, []);
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "success":

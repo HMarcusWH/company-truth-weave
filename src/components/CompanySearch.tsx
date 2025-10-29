@@ -1,68 +1,74 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, Building2, MapPin, Link2, Globe, Calendar, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/components/ui/use-toast";
 
-// Mock data - in production this would come from your PostgreSQL + pgvector
-const mockCompanies = [
-  {
-    id: "1",
-    legal_name: "Acme Corporation Ltd",
-    trading_names: ["ACME", "Acme Tech"],
-    status: "active",
-    legal_form: "Limited Company",
-    founded_on: "2010-03-15",
-    website: "https://acme.example.com",
-    identifiers: [
-      { type: "LEI", value: "123456789012ABCDEFGH", verified: true },
-      { type: "VAT", value: "GB123456789", verified: true }
-    ],
-    addresses: [
-      {
-        type: "registered",
-        lines: ["123 Tech Street"],
-        locality: "London",
-        country: "GB"
-      }
-    ],
-    relationships: [
-      { type: "subsidiary", entity: "Acme Labs Inc", count: 3 }
-    ]
-  },
-  {
-    id: "2",
-    legal_name: "Global Industries PLC",
-    trading_names: ["GI Group"],
-    status: "active",
-    legal_form: "Public Limited Company",
-    founded_on: "1995-06-20",
-    website: "https://globalindustries.example.com",
-    identifiers: [
-      { type: "LEI", value: "ABCDEF123456789012GH", verified: true }
-    ],
-    addresses: [
-      {
-        type: "registered",
-        lines: ["456 Business Park"],
-        locality: "Manchester",
-        country: "GB"
-      }
-    ],
-    relationships: []
-  }
-];
+// Types for normalized company shape used by the UI
+type Company = {
+  id: string;
+  legal_name: string;
+  status: string;
+  trading_names: string[];
+  legal_form?: string;
+  founded_on?: string;
+  website?: string;
+  identifiers: { type: string; value: string; verified?: boolean }[];
+  addresses: { type: string; lines: string[]; locality?: string; country?: string }[];
+  relationships: { type: string; entity: string; count: number }[];
+};
 
 export const CompanySearch = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCompany, setSelectedCompany] = useState<typeof mockCompanies[0] | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
 
-  const filteredCompanies = mockCompanies.filter(company =>
-    company.legal_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    company.trading_names.some(name => name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const q = searchQuery.trim();
+      let query = (supabase as any)
+        .from('entities')
+        .select('id, legal_name, status, entity_identifiers(id_type,id_value), entity_aliases(alias), entity_addresses(line1,city,country)')
+        .order('updated_at', { ascending: false })
+        .limit(50);
+
+      if (q) {
+        query = query.ilike('legal_name', `%${q}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        toast({ title: 'Failed to load companies', description: error.message } as any);
+        return;
+      }
+      if (cancelled) return;
+
+      const mapped: Company[] = (data ?? []).map((row: any) => ({
+        id: row.id,
+        legal_name: row.legal_name,
+        status: row.status || 'active',
+        trading_names: (row.entity_aliases || []).map((a: any) => a.alias),
+        legal_form: 'Company',
+        founded_on: undefined,
+        website: undefined,
+        identifiers: (row.entity_identifiers || []).map((i: any) => ({ type: i.id_type, value: i.id_value, verified: true })),
+        addresses: (row.entity_addresses || []).map((ad: any) => ({ type: 'registered', lines: [ad.line1].filter(Boolean), locality: ad.city, country: ad.country })),
+        relationships: [],
+      }));
+
+      setCompanies(mapped);
+    };
+
+    const t = setTimeout(load, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [searchQuery]);
+
+  const filteredCompanies = companies;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[400px_1fr]">

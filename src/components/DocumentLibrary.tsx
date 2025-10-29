@@ -1,56 +1,64 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FileText, Download, ExternalLink, Calendar, Building2, Tag } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/components/ui/use-toast";
 
-// Mock document data
-const mockDocuments = [
-  {
-    id: "doc1",
-    title: "Q4 2024 Financial Results - Acme Corporation",
-    doc_type: "press_release",
-    entity_name: "Acme Corporation Ltd",
-    published_date: "2024-10-15",
-    content_preview: "Acme Corporation today announced record revenue of $450M for Q4 2024, representing 23% year-over-year growth. The company attributes this success to expansion into new markets and strong product adoption.",
-    storage_url: "#",
-    confidence: 0.98,
-    source: "Official Company Website"
-  },
-  {
-    id: "doc2",
-    title: "Annual Report 2024 - Global Industries",
-    doc_type: "annual_report",
-    entity_name: "Global Industries PLC",
-    published_date: "2024-09-20",
-    content_preview: "This annual report provides a comprehensive overview of Global Industries' operations, financial performance, and strategic initiatives for the fiscal year 2024...",
-    storage_url: "#",
-    confidence: 1.0,
-    source: "Companies House"
-  },
-  {
-    id: "doc3",
-    title: "New Partnership Announcement - Acme Corporation",
-    doc_type: "press_release",
-    entity_name: "Acme Corporation Ltd",
-    published_date: "2024-08-05",
-    content_preview: "Acme Corporation is pleased to announce a strategic partnership with TechVentures Inc to accelerate innovation in the AI sector...",
-    storage_url: "#",
-    confidence: 0.95,
-    source: "PR Newswire"
-  }
-];
+// Document type used in UI
+type Doc = {
+  id: string;
+  title: string;
+  doc_type: string;
+  entity_name?: string;
+  published_date?: string;
+  content_preview?: string;
+  source_url?: string;
+  confidence?: number;
+};
 
 export const DocumentLibrary = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedDoc, setSelectedDoc] = useState<typeof mockDocuments[0] | null>(null);
+  const [docs, setDocs] = useState<Doc[]>([]);
+  const [selectedDoc, setSelectedDoc] = useState<Doc | null>(null);
 
-  const filteredDocs = mockDocuments.filter(doc =>
-    doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    doc.entity_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const { data, error } = await (supabase as any)
+        .from('documents')
+        .select('id, title, doc_type, published_at, source_url, raw_text, confidence, entities:entity_id(legal_name)')
+        .order('published_at', { ascending: false })
+        .limit(100);
+      if (error) {
+        toast({ title: 'Failed to load documents', description: error.message } as any);
+        return;
+      }
+      if (cancelled) return;
+      const mapped: Doc[] = (data ?? []).map((d: any) => ({
+        id: d.id,
+        title: d.title,
+        doc_type: d.doc_type,
+        entity_name: d.entities?.legal_name,
+        published_date: d.published_at ? new Date(d.published_at).toISOString().slice(0,10) : undefined,
+        content_preview: d.raw_text?.slice(0, 280),
+        source_url: d.source_url,
+        confidence: d.confidence ?? undefined,
+      }));
+      setDocs(mapped);
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredDocs = useMemo(() =>
+    docs.filter(doc =>
+      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (doc.entity_name || '').toLowerCase().includes(searchQuery.toLowerCase())
+    ), [docs, searchQuery]);
 
   const getDocTypeColor = (type: string) => {
     switch (type) {
@@ -93,11 +101,11 @@ export const DocumentLibrary = () => {
                   <Badge className={`text-xs ${getDocTypeColor(doc.doc_type)}`}>
                     {doc.doc_type.replace('_', ' ')}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">{doc.published_date}</span>
+                  <span className="text-xs text-muted-foreground">{doc.published_date ?? ''}</span>
                 </div>
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <Building2 className="h-3 w-3" />
-                  {doc.entity_name}
+                  {doc.entity_name ?? '—'}
                 </p>
               </div>
             </Card>
@@ -122,27 +130,25 @@ export const DocumentLibrary = () => {
                 <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mb-4">
                   <span className="flex items-center gap-1">
                     <Calendar className="h-4 w-4" />
-                    {selectedDoc.published_date}
+                    {selectedDoc.published_date ?? ''}
                   </span>
                   <span className="flex items-center gap-1">
                     <Building2 className="h-4 w-4" />
-                    {selectedDoc.entity_name}
+                    {selectedDoc.entity_name ?? '—'}
                   </span>
                   <span className="flex items-center gap-1">
                     <Tag className="h-4 w-4" />
-                    {selectedDoc.source}
+                    {selectedDoc.source_url ? new URL(selectedDoc.source_url).hostname : '—'}
                   </span>
                 </div>
 
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                  <Button size="sm" variant="outline">
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    View Original
-                  </Button>
+                  {selectedDoc.source_url && (
+                    <Button size="sm" variant="outline" onClick={() => window.open(selectedDoc.source_url!, '_blank') }>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      View Original
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -164,20 +170,14 @@ export const DocumentLibrary = () => {
               <div>
                 <h3 className="text-sm font-semibold text-foreground mb-3">Extraction Metadata</h3>
                 <div className="grid gap-2">
-                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <span className="text-sm text-muted-foreground">Confidence Score</span>
-                    <Badge variant={selectedDoc.confidence >= 0.95 ? "default" : "secondary"}>
-                      {(selectedDoc.confidence * 100).toFixed(1)}%
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <span className="text-sm text-muted-foreground">Embeddings Generated</span>
-                    <Badge variant="outline">Yes</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                    <span className="text-sm text-muted-foreground">Facts Extracted</span>
-                    <Badge variant="outline">12 facts</Badge>
-                  </div>
+                  {typeof selectedDoc.confidence === 'number' && (
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <span className="text-sm text-muted-foreground">Confidence Score</span>
+                      <Badge variant={selectedDoc.confidence >= 0.95 ? "default" : "secondary"}>
+                        {(selectedDoc.confidence * 100).toFixed(1)}%
+                      </Badge>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

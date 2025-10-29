@@ -1,71 +1,66 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Database, ExternalLink, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/components/ui/use-toast";
 
-// Mock facts data
-const mockFacts = [
-  {
-    id: "fact1",
-    subject: "Acme Corporation Ltd",
-    predicate: "hasRevenue",
-    object: "$450M",
-    qualifier: "Q4 2024",
-    confidence: 0.98,
-    status: "admitted",
-    evidence_doc: "Q4 2024 Financial Results",
-    evidence_snippet: "announced record revenue of $450M for Q4 2024",
-    created_at: "2024-10-15T14:30:00Z"
-  },
-  {
-    id: "fact2",
-    subject: "Acme Corporation Ltd",
-    predicate: "hasGrowthRate",
-    object: "23%",
-    qualifier: "year-over-year Q4 2024",
-    confidence: 0.98,
-    status: "admitted",
-    evidence_doc: "Q4 2024 Financial Results",
-    evidence_snippet: "representing 23% year-over-year growth",
-    created_at: "2024-10-15T14:30:00Z"
-  },
-  {
-    id: "fact3",
-    subject: "Acme Corporation Ltd",
-    predicate: "hasPartnership",
-    object: "TechVentures Inc",
-    qualifier: "AI sector",
-    confidence: 0.95,
-    status: "admitted",
-    evidence_doc: "New Partnership Announcement",
-    evidence_snippet: "strategic partnership with TechVentures Inc to accelerate innovation in the AI sector",
-    created_at: "2024-08-05T10:00:00Z"
-  },
-  {
-    id: "fact4",
-    subject: "Global Industries PLC",
-    predicate: "hasEmployeeCount",
-    object: "~5,000",
-    qualifier: "2024",
-    confidence: 0.85,
-    status: "quarantined",
-    evidence_doc: "Annual Report 2024",
-    evidence_snippet: "approximately 5,000 employees worldwide",
-    created_at: "2024-09-20T09:15:00Z"
-  }
-];
+// Fact type used in UI
+type Fact = {
+  id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  qualifier?: string;
+  confidence: number;
+  status: string;
+  evidence_doc?: string;
+  evidence_snippet?: string;
+  created_at: string;
+};
 
 export const FactsBrowser = () => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedFact, setSelectedFact] = useState<typeof mockFacts[0] | null>(null);
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [selectedFact, setSelectedFact] = useState<Fact | null>(null);
 
-  const filteredFacts = mockFacts.filter(fact =>
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const { data, error } = await (supabase as any)
+        .from('facts')
+        .select('id, subject, predicate, object_text, confidence, status, created_at, documents:document_id(title, raw_text)')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) {
+        toast({ title: 'Failed to load facts', description: error.message } as any);
+        return;
+      }
+      if (cancelled) return;
+      const mapped: Fact[] = (data ?? []).map((f: any) => ({
+        id: f.id,
+        subject: f.subject,
+        predicate: f.predicate,
+        object: f.object_text,
+        confidence: Number(f.confidence ?? 0),
+        status: f.status,
+        evidence_doc: f.documents?.title,
+        evidence_snippet: f.documents?.raw_text ? f.documents.raw_text.slice(0, 160) + '…' : undefined,
+        created_at: f.created_at,
+      }));
+      setFacts(mapped);
+    };
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredFacts = useMemo(() => facts.filter(fact =>
     fact.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
     fact.predicate.toLowerCase().includes(searchQuery.toLowerCase()) ||
     fact.object.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  ), [facts, searchQuery]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -181,13 +176,13 @@ export const FactsBrowser = () => {
                 <div className="space-y-3">
                   <div className="p-3 bg-muted/50 rounded-lg">
                     <span className="text-xs font-medium text-muted-foreground">Source Document</span>
-                    <p className="text-sm font-medium">{selectedFact.evidence_doc}</p>
+                    <p className="text-sm font-medium">{selectedFact.evidence_doc ?? '—'}</p>
                   </div>
                   <div className="p-3 bg-accent/20 border border-accent rounded-lg">
                     <span className="text-xs font-medium text-muted-foreground mb-2 block">
                       Citation
                     </span>
-                    <p className="text-sm italic">"{selectedFact.evidence_snippet}"</p>
+                    <p className="text-sm italic">"{selectedFact.evidence_snippet ?? '—'}"</p>
                   </div>
                 </div>
               </div>
