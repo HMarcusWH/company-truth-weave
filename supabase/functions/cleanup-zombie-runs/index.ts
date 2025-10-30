@@ -24,9 +24,9 @@ Deno.serve(async (req) => {
     // Find runs that are stuck in "running" status for more than 10 minutes
     const { data: zombieRuns, error: selectError } = await supabase
       .from('runs')
-      .select('id, created_at, agent_definition_id')
-      .eq('status', 'running')
-      .lt('created_at', timeoutThreshold.toISOString());
+      .select('run_id, started_at')
+      .eq('status_code', 'running')
+      .lt('started_at', timeoutThreshold.toISOString());
 
     if (selectError) {
       console.error('Error finding zombie runs:', selectError);
@@ -48,18 +48,14 @@ Deno.serve(async (req) => {
     console.log(`Found ${zombieRuns.length} zombie runs to clean up`);
 
     // Update all zombie runs to "timeout" status
-    const runIds = zombieRuns.map(r => r.id);
+    const runIds = zombieRuns.map(r => r.run_id);
     const { error: updateError } = await supabase
       .from('runs')
       .update({
-        status: 'timeout',
-        completed_at: new Date().toISOString(),
-        errors_json: [{ 
-          step: 'cleanup', 
-          message: 'Run timed out after 10 minutes of inactivity' 
-        }]
+        status_code: 'timeout',
+        ended_at: new Date().toISOString()
       })
-      .in('id', runIds);
+      .in('run_id', runIds);
 
     if (updateError) {
       console.error('Error updating zombie runs:', updateError);

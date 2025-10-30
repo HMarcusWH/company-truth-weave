@@ -235,7 +235,25 @@ serve(async (req) => {
       );
     }
 
-    // Step 2: Create coordinator run
+    // Step 2: Concurrency pre-check (block if another recent run is active)
+    const busyThreshold = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: recentRunning, error: recentRunningError } = await supabase
+      .from('runs')
+      .select('run_id, started_at')
+      .eq('status_code', 'running')
+      .gt('started_at', busyThreshold)
+      .limit(1);
+
+    if (!recentRunningError && recentRunning && recentRunning.length > 0) {
+      return new Response(
+        JSON.stringify({ error: 'Another run is already in progress. Try again shortly.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else if (recentRunningError) {
+      console.error('Concurrency pre-check failed:', recentRunningError);
+    }
+
+    // Step 3: Create coordinator run
     const { data: runData, error: runError } = await supabase
       .from('runs')
       .insert({
@@ -263,26 +281,41 @@ serve(async (req) => {
     }> = [];
     let agentCallCount = 0;
 
+    // Step 3.5: Post-insert guard — cancel if another run slipped in
+    const { data: othersRunning } = await supabase
+      .from('runs')
+      .select('run_id')
+      .eq('status_code', 'running')
+      .neq('run_id', runId)
+      .limit(1);
+
+    if (othersRunning && othersRunning.length > 0) {
+      await supabase
+        .from('runs')
+        .update({
+          status_code: 'cancelled',
+          ended_at: new Date().toISOString(),
+          metrics_json: {
+            workflow_status: 'cancelled',
+            reason: 'concurrency_guard',
+            cancelled_at: new Date().toISOString()
+          }
+        })
+        .eq('run_id', runId);
+
+      return new Response(
+        JSON.stringify({ error: 'Run cancelled because another run is already in progress.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Step 2.5: Chunk document and store with embeddings
     console.log('Step 2.5: Chunking document...');
     const chunks = chunkText(documentText);
-  console.log(`Created ${chunks.length} chunks from document`);
+    console.log(`Created ${chunks.length} chunks from document`);
 
-  // Check for concurrent runs (prevent race conditions)
-  const { data: activeRuns, error: activeRunsError } = await supabase
-    .from('runs')
-    .select('run_id')
-    .eq('status_code', 'running')
-    .neq('run_id', runId);
-
-  if (activeRunsError) {
-    console.error('Error checking for active runs:', activeRunsError);
-  } else if (activeRuns && activeRuns.length > 0) {
-    console.warn(`Found ${activeRuns.length} active runs. Proceeding with caution.`);
-  }
-  
-  try {
-    // Store chunks
+    try {
+      // Store chunks
       const chunkInserts = chunks.map((text, idx) => ({
         document_id: documentId,
         seq: idx,
