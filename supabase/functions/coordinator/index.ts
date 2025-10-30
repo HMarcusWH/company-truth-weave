@@ -266,10 +266,23 @@ serve(async (req) => {
     // Step 2.5: Chunk document and store with embeddings
     console.log('Step 2.5: Chunking document...');
     const chunks = chunkText(documentText);
-    console.log(`Created ${chunks.length} chunks from document`);
-    
-    try {
-      // Store chunks
+  console.log(`Created ${chunks.length} chunks from document`);
+
+  // Check for concurrent runs (prevent race conditions)
+  const { data: activeRuns, error: activeRunsError } = await supabase
+    .from('runs')
+    .select('run_id')
+    .eq('status_code', 'running')
+    .neq('run_id', runId);
+
+  if (activeRunsError) {
+    console.error('Error checking for active runs:', activeRunsError);
+  } else if (activeRuns && activeRuns.length > 0) {
+    console.warn(`Found ${activeRuns.length} active runs. Proceeding with caution.`);
+  }
+  
+  try {
+    // Store chunks
       const chunkInserts = chunks.map((text, idx) => ({
         document_id: documentId,
         seq: idx,

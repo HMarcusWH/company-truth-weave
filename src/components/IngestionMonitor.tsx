@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Activity, CheckCircle2, AlertCircle, Clock, Database, TrendingUp } from "lucide-react";
+import { Activity, CheckCircle2, AlertCircle, Clock, Database, TrendingUp, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 type SystemStats = {
@@ -22,6 +23,7 @@ export const IngestionMonitor = () => {
   });
   const [recentRuns, setRecentRuns] = useState<any[]>([]);
   const [validationSuites, setValidationSuites] = useState<any[]>([]);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,15 +146,44 @@ export const IngestionMonitor = () => {
     switch (status) {
       case "success":
       case "pass":
+      case "completed":
         return "bg-success text-success-foreground";
       case "warning":
       case "warn":
         return "bg-warning text-warning-foreground";
       case "error":
       case "fail":
+      case "failed":
         return "bg-destructive text-destructive-foreground";
+      case "timeout":
+        return "bg-warning text-warning-foreground";
+      case "running":
+        return "bg-muted text-muted-foreground animate-pulse";
       default:
         return "bg-muted text-muted-foreground";
+    }
+  };
+
+  const handleCleanupZombieRuns = async () => {
+    setIsCleaningUp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cleanup-zombie-runs');
+      
+      if (error) throw error;
+      
+      toast({
+        title: "Cleanup Complete",
+        description: `Cleaned up ${data.cleaned} zombie runs`,
+      });
+    } catch (error: any) {
+      console.error('Cleanup failed:', error);
+      toast({
+        title: "Cleanup Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsCleaningUp(false);
     }
   };
 
@@ -203,7 +234,19 @@ export const IngestionMonitor = () => {
 
       {/* Recent Runs */}
       <Card className="p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Coordinator Runs</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-foreground">Recent Coordinator Runs</h2>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCleanupZombieRuns}
+            disabled={isCleaningUp}
+            className="gap-2"
+          >
+            <Trash2 className="h-4 w-4" />
+            {isCleaningUp ? 'Cleaning...' : 'Cleanup Zombie Runs'}
+          </Button>
+        </div>
         <div className="space-y-3">
           {recentRuns.map((run) => (
             <div key={run.id} className="p-4 bg-muted/30 rounded-lg">
