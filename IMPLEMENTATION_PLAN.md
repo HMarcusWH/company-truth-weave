@@ -101,6 +101,66 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 - Check session on protected pages; redirect to /auth if not authenticated
 - Use `supabase.auth.onAuthStateChange` to track session state
 
+## Phase B: Core Schema Alignment (Priority: HIGH) ✅ COMPLETE (2025-10-30)
+
+**Goal:** Align database schema with vision documents for typed knowledge graph with taxonomies, chunked embeddings, and structured company data.
+
+### B.1 ISO Lookups & Identifier Namespaces ✅
+- ✅ `iso_countries` table with 20 major countries (SE, US, GB, DE, FR, CN, JP, etc.)
+- ✅ `iso_currencies` table with 20 major currencies (SEK, USD, EUR, GBP, JPY, etc.)
+- ✅ `identifier_namespaces` table (LEI, orgnr_se, SEC_CIK, ISIN, ticker_MIC, DUNS, VAT_EU)
+- ✅ `picklist_legal_form` seeded with Swedish legal forms (AB, HB, KB, EF, etc.)
+- ✅ `picklist_company_status` (active, dormant, dissolved, liquidation, etc.)
+
+### B.2 Taxonomy Foundation with ltree ✅
+- ✅ `ltree` extension installed for hierarchical paths
+- ✅ `code_systems` table (name, version, kind: industry/product_service/other)
+- ✅ `taxonomy_nodes` table with ltree paths for hierarchical navigation
+- ✅ `taxonomy_node_embeddings` for semantic search over classifications
+- ✅ `taxonomy_crosswalks` for mapping between classification systems
+- ✅ ISIC Rev.4 top-level sections seeded (A-U, 21 industry categories)
+- ✅ `xwalk_relation` enum (exact, broader, narrower, related)
+
+### B.3 Document Chunking & Embeddings ✅
+- ✅ `document_chunks` table (500-word chunks with 50-word overlap)
+- ✅ `document_chunk_embeddings` table with VECTOR(1536)
+- ✅ Added `content_hash`, `language`, `source_type` columns to `documents`
+- ✅ Coordinator updated with `chunkText()` function
+- ✅ Automatic chunking on document ingestion
+- ✅ IVFFlat indexes on chunk embeddings for fast similarity search
+
+### B.4 Typed Facts Columns ✅
+- ✅ Added typed value columns to `facts` table:
+  - `value_number` (NUMERIC) - for employees, revenue, etc.
+  - `value_date` (DATE) - for founded dates, period ends, etc.
+  - `value_money_amount` (NUMERIC) + `value_money_ccy` (CHAR(3)) - for financials
+  - `value_pct` (NUMERIC(5,2)) - for ownership percentages, margins
+  - `value_code` (TEXT) - for ISIC codes, legal forms, statuses
+  - `value_country` (CHAR(2)) - for country references
+  - `value_entity_id` (UUID) - for entity relationships
+- ✅ `detectTypedValue()` function in coordinator for automatic type detection
+- ✅ Backward compatible: kept `object TEXT` column
+
+### B.5 Company Details Schema ✅
+- ✅ `company_details` table (legal_form, status, founded_year, employees, size_band)
+- ✅ `entity_identifiers` table (structured identifiers with namespace references)
+- ✅ `entity_addresses` table (structured addresses with geocoding support)
+- ✅ `company_industries` table (primary/secondary ISIC classifications with confidence)
+- ✅ Indexes: `idx_entity_identifiers_ns`, `idx_entity_addresses_entity`, `idx_company_industries_entity`
+
+### B.6 Security & Performance ✅
+- ✅ RLS policies on all 14 new tables
+- ✅ Read access for all authenticated users
+- ✅ Write access for authenticated users on operational tables
+- ✅ Admin-only management for reference data (ISO, taxonomies)
+- ✅ Performance indexes: ltree GIST, vector IVFFlat, foreign key indexes
+
+**Migration File:** `20241030_phase_b_core_schema_alignment.sql`
+**Tables Added:** 14 (iso_countries, iso_currencies, identifier_namespaces, picklist_legal_form, picklist_company_status, code_systems, taxonomy_nodes, taxonomy_node_embeddings, taxonomy_crosswalks, document_chunks, document_chunk_embeddings, company_details, entity_identifiers, entity_addresses, company_industries)
+**Total Tables:** 39
+
+---
+
 ## Phase 3: Edge Functions for AI Agents (Priority: HIGH) ✅ COMPLETE
 
 **Reference:** Detailed AI integration patterns in `docs/AI_MODEL_INTEGRATION.md` (primary guide)

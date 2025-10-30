@@ -1,5 +1,79 @@
 # Changelog - Company Truth Weave
 
+## [Phase B: Core Schema Alignment] - 2025-10-30
+
+### 🚀 Major Features - Typed Knowledge Graph
+
+#### **Phase B: Core Schema Alignment Complete**
+- **Goal**: Align database schema with vision documents for typed, structured company intelligence
+- **Status**: ✅ COMPLETE - 14 new tables, 39 total tables
+- **Migration**: `20241030_phase_b_core_schema_alignment.sql`
+
+#### **ISO Lookups & Standards**
+- ✅ `iso_countries` - 20 major countries seeded (SE, US, GB, DE, FR, CN, JP, etc.)
+- ✅ `iso_currencies` - 20 major currencies seeded (SEK, USD, EUR, GBP, JPY, etc.)
+- ✅ `identifier_namespaces` - 7 global identifiers (LEI, orgnr_se, SEC_CIK, ISIN, ticker_MIC, DUNS, VAT_EU)
+- ✅ `picklist_legal_form` - Swedish legal forms (AB, HB, KB, EF, etc.)
+- ✅ `picklist_company_status` - Company lifecycle statuses
+
+#### **Taxonomy Infrastructure with ltree**
+- ✅ `ltree` extension installed for hierarchical classification paths
+- ✅ `code_systems` - Classification system metadata (ISIC, CPC, HS codes)
+- ✅ `taxonomy_nodes` - Hierarchical taxonomy with ltree paths
+- ✅ `taxonomy_node_embeddings` - Semantic search over classifications (VECTOR 1536)
+- ✅ `taxonomy_crosswalks` - Mappings between classification systems
+- ✅ ISIC Rev.4 seeded - 21 top-level industry sections (A-U)
+- ✅ `xwalk_relation` enum - Crosswalk precision (exact, broader, narrower, related)
+
+#### **Document Chunking & Embeddings**
+- ✅ `document_chunks` - 500-word chunks with 50-word overlap
+- ✅ `document_chunk_embeddings` - Per-chunk vectors for precise retrieval
+- ✅ `chunkText()` function in coordinator - Automatic chunking on ingestion
+- ✅ IVFFlat indexes - Fast similarity search on chunk embeddings
+- ✅ Added `content_hash`, `language`, `source_type` to documents table
+
+#### **Typed Facts - Structured Value Storage**
+- ✅ `value_number` - Numeric values (employees, revenue_millions)
+- ✅ `value_date` - Date values (founded_year, period_end)
+- ✅ `value_money_amount` + `value_money_ccy` - Monetary values with currency
+- ✅ `value_pct` - Percentage values (ownership, margins)
+- ✅ `value_code` - Code references (ISIC codes, legal forms)
+- ✅ `value_country` - Country code references (ISO alpha-2)
+- ✅ `value_entity_id` - Entity relationships (ownership, subsidiaries)
+- ✅ `detectTypedValue()` function - Automatic type detection in coordinator
+- ✅ Backward compatible - Kept `object TEXT` column for legacy data
+
+#### **Company Details Schema**
+- ✅ `company_details` - Structured company metadata (legal_form, status, employees, size_band)
+- ✅ `entity_identifiers` - Structured identifiers with namespace validation
+- ✅ `entity_addresses` - Structured addresses with geocoding (lat/lon)
+- ✅ `company_industries` - ISIC classifications (primary/secondary with confidence)
+- ✅ Foreign key constraints - Links to ISO tables and namespaces
+- ✅ Performance indexes - Namespace lookups, address queries, industry filters
+
+#### **Security & Performance**
+- ✅ RLS policies on all 14 new tables
+- ✅ Read access for authenticated users
+- ✅ Write access for authenticated users on operational tables
+- ✅ Admin-only management for reference data
+- ✅ ltree GIST indexes for hierarchical queries
+- ✅ Vector IVFFlat indexes for similarity search
+- ✅ Foreign key indexes for join optimization
+
+### 📚 Documentation Updates
+- ✅ Created `ROADMAP.md` - Detailed vision alignment plan (Phases C-F)
+- ✅ Updated `IMPLEMENTATION_PLAN.md` - Phase B completion status
+- ✅ Updated `README.md` - Current status and roadmap link
+- ✅ Updated `docs/AI_MODEL_INTEGRATION.md` - Renamed from OpenAI guide
+
+### 🔄 Next Phase: Phase C - Governance Layer
+- ⏳ Stored procedures for zero-trust writes (`sp_upsert_entity`, `sp_add_fact_typed`, etc.)
+- ⏳ Materialized views for fast queries (`company_profile_view`, `latest_financials_view`)
+- ⏳ JSONB data migration to structured tables
+- ⏳ **Target Completion**: 2025-11-09 (10 days)
+
+---
+
 ## [Critical Fixes] - 2025-10-30
 
 ### 🐛 Bug Fixes

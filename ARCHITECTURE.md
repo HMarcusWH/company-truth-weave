@@ -370,6 +370,106 @@ Normalized statements with subject-predicate-object structure and evidence.
 
 ---
 
+### Layer 1.5: Typed Knowledge Graph (Phase B - 2025-10-30) ✅
+
+**Purpose**: Structured, typed data storage for company intelligence with taxonomies and embeddings.
+
+#### `iso_countries` & `iso_currencies`
+ISO standard lookup tables for validation and referential integrity.
+
+| Table | Columns | Description |
+|-------|---------|-------------|
+| `iso_countries` | alpha2, alpha3, numeric_code, name_en, official_name_en | 20 major countries seeded |
+| `iso_currencies` | code, numeric_code, name_en, minor_unit | 20 major currencies seeded |
+
+#### `identifier_namespaces`
+Global identifier systems (LEI, orgnr_se, SEC_CIK, ISIN, ticker_MIC, DUNS, VAT_EU).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `namespace` | TEXT | Primary key (e.g., 'LEI') |
+| `label` | TEXT | Human-readable name |
+| `pattern` | TEXT | Regex validation pattern |
+| `url_template` | TEXT | Lookup URL with {value} placeholder |
+
+#### `taxonomy_nodes` (with ltree)
+Hierarchical classifications (ISIC, CPC, HS codes) with semantic embeddings.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `node_id` | UUID | Primary key |
+| `code_system_id` | UUID | FK to code_systems |
+| `code` | TEXT | Classification code (e.g., 'J' for ISIC) |
+| `label` | TEXT | Human-readable label |
+| `path` | LTREE | Hierarchical path (e.g., 'J.62.620') |
+| `level` | INT | Depth in hierarchy |
+| `synonyms` | JSONB | Alternative names |
+
+**Indexes**:
+- `idx_taxonomy_nodes_path` (GIST for ltree queries like `path ~ 'J.*'`)
+- `idx_taxonomy_node_embeddings` (IVFFlat for semantic search)
+
+#### `document_chunks` & `document_chunk_embeddings`
+Document text split into 500-word chunks with 50-word overlap for precise retrieval.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `chunk_id` | UUID | Primary key |
+| `document_id` | UUID | FK to documents |
+| `seq` | INT | Chunk sequence number |
+| `chunk_text` | TEXT | Chunk content |
+| `embedding` | VECTOR(1536) | Separate table for semantic search |
+
+**Rationale**: Whole-document embeddings lose precision. Chunked embeddings enable retrieval of exact passages.
+
+#### `facts` - Typed Value Columns
+Extended `facts` table with structured value storage (backward compatible).
+
+| New Column | Type | Use Case |
+|------------|------|----------|
+| `value_number` | NUMERIC | Employees, revenue_millions, etc. |
+| `value_date` | DATE | Founded_year, period_end |
+| `value_money_amount` + `value_money_ccy` | NUMERIC + CHAR(3) | Revenue, expenses with currency |
+| `value_pct` | NUMERIC(5,2) | Ownership, margins, growth rates |
+| `value_code` | TEXT | ISIC codes, legal forms, statuses |
+| `value_country` | CHAR(2) | Country references (ISO alpha-2) |
+| `value_entity_id` | UUID | Entity relationships (ownership, subsidiaries) |
+
+**Implementation**: `detectTypedValue()` function in coordinator automatically populates typed columns from `object` text.
+
+#### `company_details`, `entity_identifiers`, `entity_addresses`
+Structured company data replacing JSONB blobs.
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `company_details` | Corporate metadata | legal_form, status, employees, size_band, country_code |
+| `entity_identifiers` | Structured identifiers | namespace (FK), value, is_primary |
+| `entity_addresses` | Structured addresses | is_hq, locality, region, postal_code, country_code, lat/lon |
+
+**Rationale**: JSONB is flexible but untyped. Structured tables enable foreign keys, validation, and efficient queries.
+
+#### `company_industries`
+Company classifications with confidence tracking.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `entity_id` | UUID | FK to entities |
+| `code_system_id` | UUID | FK to code_systems (ISIC, CPC, etc.) |
+| `code` | TEXT | Classification code |
+| `role` | TEXT | primary or secondary |
+| `share_pct` | NUMERIC(5,2) | Revenue share from this activity |
+| `confidence` | NUMERIC(3,2) | Agent confidence score |
+| `evidence_doc_id` | UUID | FK to source document |
+
+**Indexes**:
+- `idx_company_industries_entity` (for company profile queries)
+- `idx_company_industries_code` (for industry sector queries)
+
+**Total Tables Added**: 14  
+**Total Tables Now**: 39
+
+---
+
 ### Layer 2: PromptOps (Versioned Prompts)
 
 #### `prompt_templates`

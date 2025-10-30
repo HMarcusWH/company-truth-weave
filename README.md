@@ -6,6 +6,14 @@
 
 This platform uses a **multi-agent architecture** with PromptOps governance to transform company documents (press releases, filings, web pages) into a validated knowledge graph. Each agent has a specific role, versioned prompts, and built-in quality gates.
 
+### Current Status (2025-10-30)
+
+**✅ Phase A: Foundation** - Multi-agent pipeline operational with PromptOps
+**✅ Phase B: Core Schema Alignment** - Typed knowledge graph with taxonomies, chunked embeddings, structured company data
+**🔄 Phase C: Governance Layer** - NEXT: Stored procedures for zero-trust writes, materialized views
+
+See **[ROADMAP.md](./ROADMAP.md)** for detailed vision alignment plan (Phases C-F).
+
 ### Key Features
 
 - **Multi-Agent Pipeline**: Research → Resolver → Critic → Arbiter → Storage
@@ -59,6 +67,7 @@ This platform uses a **multi-agent architecture** with PromptOps governance to t
 ## Documentation
 
 ### **Core Documentation**
+- **[Roadmap](./ROADMAP.md)** - Vision alignment plan with Phases C-F detailed (NEXT STEPS HERE)
 - **[Architecture Guide](./ARCHITECTURE.md)** - Complete system architecture and technical overview
 - **[Implementation Plan](./IMPLEMENTATION_PLAN.md)** - Project phases, roadmap, and technical design
 - **[Changelog](./CHANGELOG.md)** - Recent fixes, improvements, and known issues
