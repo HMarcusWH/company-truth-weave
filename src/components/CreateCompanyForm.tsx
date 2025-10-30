@@ -15,6 +15,8 @@ export default function CreateCompanyForm({ onCreated }: Props) {
   const [legalName, setLegalName] = React.useState("");
   const [entityType, setEntityType] = React.useState<"company"|"person"|"product"|"location"|"event">("company");
   const [website, setWebsite] = React.useState("");
+  const [countryCode, setCountryCode] = React.useState("");
+  const [orgNr, setOrgNr] = React.useState("");
   const [lei, setLei] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -39,18 +41,22 @@ export default function CreateCompanyForm({ onCreated }: Props) {
         return;
       }
 
-      const identifiers = lei ? { LEI: lei.trim() } : {};
+      const identifiers: any = {};
+      if (lei) identifiers.LEI = lei.trim();
+      if (orgNr) identifiers.org_nr = orgNr.trim();
+      
       const { error } = await supabase.from("entities").insert([{
         legal_name: legalName.trim(),
         entity_type: entityType,
         website: website || null,
+        country_code: countryCode || null,
         identifiers,
       }]);
       if (error) throw error;
 
       toast({ title: "Company created", description: legalName });
       onCreated?.();
-      setLegalName(""); setWebsite(""); setLei("");
+      setLegalName(""); setWebsite(""); setCountryCode(""); setOrgNr(""); setLei("");
       setEntityType("company");
     } catch (err: any) {
       toast({ title: "Create failed", description: err.message ?? String(err), variant: "destructive" });
@@ -82,6 +88,28 @@ export default function CreateCompanyForm({ onCreated }: Props) {
         <Label htmlFor="website">Website (optional)</Label>
         <Input id="website" value={website} onChange={(e)=>setWebsite(e.target.value)} placeholder="https://example.com" />
       </div>
+      <div>
+        <Label htmlFor="country">Country</Label>
+        <Select value={countryCode} onValueChange={setCountryCode}>
+          <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="SE">🇸🇪 Sweden</SelectItem>
+            <SelectItem value="US">🇺🇸 United States</SelectItem>
+            <SelectItem value="GB">🇬🇧 United Kingdom</SelectItem>
+            <SelectItem value="DE">🇩🇪 Germany</SelectItem>
+            <SelectItem value="FR">🇫🇷 France</SelectItem>
+            <SelectItem value="NO">🇳🇴 Norway</SelectItem>
+            <SelectItem value="DK">🇩🇰 Denmark</SelectItem>
+            <SelectItem value="FI">🇫🇮 Finland</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {countryCode === "SE" && (
+        <div>
+          <Label htmlFor="org_nr">Swedish Org. Number</Label>
+          <Input id="org_nr" value={orgNr} onChange={(e)=>setOrgNr(e.target.value)} placeholder="556000-0000" />
+        </div>
+      )}
       <div>
         <Label htmlFor="lei">LEI (optional)</Label>
         <Input id="lei" value={lei} onChange={(e)=>setLei(e.target.value)} placeholder="HWUPKR0MPOU8FGXBT394" />

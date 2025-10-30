@@ -61,14 +61,47 @@ export const DocumentLibrary = () => {
       (doc.entity_name || '').toLowerCase().includes(searchQuery.toLowerCase())
     ), [docs, searchQuery]);
 
-  const getDocTypeColor = (type: string) => {
-    switch (type) {
-      case "press_release": return "bg-accent text-accent-foreground";
-      case "annual_report": return "bg-primary text-primary-foreground";
-      case "filing": return "bg-secondary text-secondary-foreground";
-      default: return "bg-muted text-muted-foreground";
-    }
-  };
+  function getDocTypeColor(dt: string) {
+    const map: Record<string, string> = {
+      annual_report: "bg-blue-100 text-blue-800",
+      interim_report: "bg-cyan-100 text-cyan-800",
+      prospectus: "bg-purple-100 text-purple-800",
+      sustainability_report: "bg-green-100 text-green-800",
+      remuneration_report: "bg-yellow-100 text-yellow-800",
+      sec_10k: "bg-indigo-100 text-indigo-800",
+      sec_10q: "bg-blue-100 text-blue-800",
+      sec_8k: "bg-violet-100 text-violet-800",
+      sec_20f: "bg-purple-100 text-purple-800",
+      esg_report: "bg-emerald-100 text-emerald-800",
+      offering_circular: "bg-pink-100 text-pink-800",
+      financial_report: "bg-blue-100 text-blue-800",
+      press_release: "bg-green-100 text-green-800",
+      proxy_statement: "bg-purple-100 text-purple-800",
+      registration: "bg-orange-100 text-orange-800",
+    };
+    return map[dt] || "bg-gray-100 text-gray-800";
+  }
+
+  function getDocTypeLabel(dt: string) {
+    const labels: Record<string, string> = {
+      annual_report: "Annual Report",
+      interim_report: "Interim Report",
+      prospectus: "Prospectus",
+      sustainability_report: "Sustainability",
+      remuneration_report: "Remuneration",
+      sec_10k: "10-K",
+      sec_10q: "10-Q",
+      sec_8k: "8-K",
+      sec_20f: "20-F",
+      esg_report: "ESG",
+      offering_circular: "Offering Circular",
+      financial_report: "Financial",
+      press_release: "Press Release",
+      proxy_statement: "Proxy",
+      registration: "Registration",
+    };
+    return labels[dt] || dt.replace(/_/g, " ");
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
@@ -107,7 +140,7 @@ export const DocumentLibrary = () => {
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={`text-xs ${getDocTypeColor(doc.doc_type)}`}>
-                    {doc.doc_type.replace('_', ' ')}
+                    {getDocTypeLabel(doc.doc_type)}
                   </Badge>
                   <span className="text-xs text-muted-foreground">{doc.published_date ?? ''}</span>
                 </div>
@@ -131,7 +164,7 @@ export const DocumentLibrary = () => {
                 <div className="flex items-start justify-between gap-4 mb-4">
                   <h2 className="text-2xl font-bold text-foreground">{selectedDoc.title}</h2>
                   <Badge className={getDocTypeColor(selectedDoc.doc_type)}>
-                    {selectedDoc.doc_type.replace('_', ' ')}
+                    {getDocTypeLabel(selectedDoc.doc_type)}
                   </Badge>
                 </div>
                 

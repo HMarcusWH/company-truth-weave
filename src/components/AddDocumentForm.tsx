@@ -9,9 +9,39 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
+const DOC_TYPES_BY_COUNTRY: Record<string, { value: string; label: string }[]> = {
+  SE: [
+    { value: "annual_report", label: "Årsredovisning (Annual Report)" },
+    { value: "interim_report", label: "Delårsrapport (Interim Report)" },
+    { value: "prospectus", label: "Prospekt (Prospectus)" },
+    { value: "sustainability_report", label: "Hållbarhetsrapport (Sustainability Report)" },
+    { value: "remuneration_report", label: "Ersättningsrapport (Remuneration Report)" },
+    { value: "press_release", label: "Press Release" },
+    { value: "esg_report", label: "ESG Report" },
+  ],
+  US: [
+    { value: "sec_10k", label: "SEC Form 10-K (Annual Report)" },
+    { value: "sec_10q", label: "SEC Form 10-Q (Quarterly Report)" },
+    { value: "sec_8k", label: "SEC Form 8-K (Current Report)" },
+    { value: "sec_20f", label: "SEC Form 20-F (Foreign Annual Report)" },
+    { value: "prospectus", label: "Prospectus" },
+    { value: "proxy_statement", label: "Proxy Statement" },
+    { value: "esg_report", label: "ESG Report" },
+  ],
+  GLOBAL: [
+    { value: "annual_report", label: "Annual Report" },
+    { value: "interim_report", label: "Interim/Quarterly Report" },
+    { value: "prospectus", label: "Prospectus" },
+    { value: "offering_circular", label: "Offering Circular" },
+    { value: "press_release", label: "Press Release" },
+    { value: "esg_report", label: "ESG Report" },
+    { value: "sustainability_report", label: "Sustainability Report" },
+  ],
+};
+
 type Props = { onUploaded?: (docId: string) => void };
 
-type EntityLite = { id: string; legal_name: string };
+type EntityLite = { id: string; legal_name: string; country_code?: string | null };
 
 export default function AddDocumentForm({ onUploaded }: Props) {
   const { toast } = useToast();
@@ -27,11 +57,16 @@ export default function AddDocumentForm({ onUploaded }: Props) {
     (async () => {
       const { data, error } = await supabase
         .from("entities")
-        .select("id, legal_name")
+        .select("id, legal_name, country_code")
         .order("legal_name", { ascending: true });
       if (!error && data) setEntities(data as EntityLite[]);
     })();
   }, []);
+
+  const selectedEntityData = entities.find(e => e.id === entityId);
+  const availableDocTypes = selectedEntityData?.country_code 
+    ? (DOC_TYPES_BY_COUNTRY[selectedEntityData.country_code] || DOC_TYPES_BY_COUNTRY.GLOBAL)
+    : DOC_TYPES_BY_COUNTRY.GLOBAL;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,14 +130,12 @@ export default function AddDocumentForm({ onUploaded }: Props) {
 
       <div>
         <Label>Document type</Label>
-        <Select value={docType} onValueChange={(v)=>setDocType(v as any)}>
+        <Select value={docType} onValueChange={(v) => setDocType(v as any)}>
           <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="press_release">press_release</SelectItem>
-            <SelectItem value="filing">filing</SelectItem>
-            <SelectItem value="financial_report">financial_report</SelectItem>
-            <SelectItem value="article">article</SelectItem>
-            <SelectItem value="other">other</SelectItem>
+            {availableDocTypes.map(dt => (
+              <SelectItem key={dt.value} value={dt.value}>{dt.label}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

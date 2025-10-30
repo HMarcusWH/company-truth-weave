@@ -26,11 +26,13 @@ import CreateCompanyForm from "@/components/CreateCompanyForm";
 type Company = {
   id: string;
   legal_name: string;
+  entity_type: string;
   status: string;
   trading_names: string[];
   legal_form?: string;
   founded_on?: string;
   website?: string;
+  country_code?: string;
   identifiers: { type: string; value: string; verified?: boolean }[];
   addresses: { type: string; lines: string[]; locality?: string; country?: string }[];
   relationships: { type: string; entity: string; count: number }[];
@@ -63,11 +65,13 @@ export const CompanySearch = () => {
       const mapped: Company[] = (data ?? []).map((row: any) => ({
         id: row.id,
         legal_name: row.legal_name,
+        entity_type: row.entity_type || 'company',
         status: 'active',
         trading_names: Array.isArray(row.trading_names) ? row.trading_names : [],
         legal_form: row.entity_type || 'Company',
         founded_on: undefined,
         website: row.website,
+        country_code: row.country_code,
         identifiers: Object.entries(row.identifiers || {}).map(([type, value]) => ({ type, value: String(value), verified: true })),
         addresses: Array.isArray(row.addresses) ? row.addresses : [],
         relationships: Array.isArray(row.relationships) ? row.relationships : [],
@@ -129,6 +133,11 @@ export const CompanySearch = () => {
                     <Badge variant="outline" className="text-xs">
                       {company.legal_form}
                     </Badge>
+                    {company.country_code && (
+                      <Badge variant="secondary" className="text-xs">
+                        {company.country_code}
+                      </Badge>
+                    )}
                     <Badge variant={company.status === "active" ? "default" : "secondary"} className="text-xs">
                       {company.status}
                     </Badge>
@@ -163,11 +172,14 @@ export const CompanySearch = () => {
                   </Badge>
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-4 w-4" />
-                    Founded {selectedCompany.founded_on}
-                  </span>
+                  {selectedCompany.founded_on && (
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-4 w-4" />
+                      Founded {selectedCompany.founded_on}
+                    </span>
+                  )}
                   <span>{selectedCompany.legal_form}</span>
+                  {selectedCompany.country_code && <span>• {selectedCompany.country_code}</span>}
                 </div>
               </div>
 

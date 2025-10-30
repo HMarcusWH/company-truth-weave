@@ -310,6 +310,7 @@ export type Database = {
       entities: {
         Row: {
           addresses: Json | null
+          country_code: string | null
           created_at: string
           entity_type: Database["public"]["Enums"]["entity_type"]
           id: string
@@ -323,6 +324,7 @@ export type Database = {
         }
         Insert: {
           addresses?: Json | null
+          country_code?: string | null
           created_at?: string
           entity_type: Database["public"]["Enums"]["entity_type"]
           id?: string
@@ -336,6 +338,7 @@ export type Database = {
         }
         Update: {
           addresses?: Json | null
+          country_code?: string | null
           created_at?: string
           entity_type?: Database["public"]["Enums"]["entity_type"]
           id?: string
@@ -1128,6 +1131,17 @@ export type Database = {
         | "press_release"
         | "financial_report"
         | "other"
+        | "annual_report"
+        | "interim_report"
+        | "prospectus"
+        | "sustainability_report"
+        | "remuneration_report"
+        | "sec_10k"
+        | "sec_10q"
+        | "sec_8k"
+        | "sec_20f"
+        | "esg_report"
+        | "offering_circular"
       entity_type: "company" | "person" | "location" | "product" | "event"
       fact_status: "pending" | "verified" | "disputed" | "superseded"
       ingestion_status: "pending" | "running" | "completed" | "failed"
@@ -1265,6 +1279,17 @@ export const Constants = {
         "press_release",
         "financial_report",
         "other",
+        "annual_report",
+        "interim_report",
+        "prospectus",
+        "sustainability_report",
+        "remuneration_report",
+        "sec_10k",
+        "sec_10q",
+        "sec_8k",
+        "sec_20f",
+        "esg_report",
+        "offering_circular",
       ],
       entity_type: ["company", "person", "location", "product", "event"],
       fact_status: ["pending", "verified", "disputed", "superseded"],
