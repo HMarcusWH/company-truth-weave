@@ -164,6 +164,36 @@ export type Database = {
         }
         Relationships: []
       }
+      code_systems: {
+        Row: {
+          code_system_id: string
+          created_at: string
+          kind: string
+          name: string
+          publisher: string | null
+          url: string | null
+          version: string
+        }
+        Insert: {
+          code_system_id?: string
+          created_at?: string
+          kind: string
+          name: string
+          publisher?: string | null
+          url?: string | null
+          version: string
+        }
+        Update: {
+          code_system_id?: string
+          created_at?: string
+          kind?: string
+          name?: string
+          publisher?: string | null
+          url?: string | null
+          version?: string
+        }
+        Relationships: []
+      }
       code_values: {
         Row: {
           code: string
@@ -205,6 +235,118 @@ export type Database = {
           },
         ]
       }
+      company_details: {
+        Row: {
+          country_code: string | null
+          created_at: string
+          employees: number | null
+          entity_id: string
+          founded_year: number | null
+          legal_form: string | null
+          primary_isic_code: string | null
+          size_band: string | null
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          country_code?: string | null
+          created_at?: string
+          employees?: number | null
+          entity_id: string
+          founded_year?: number | null
+          legal_form?: string | null
+          primary_isic_code?: string | null
+          size_band?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          country_code?: string | null
+          created_at?: string
+          employees?: number | null
+          entity_id?: string
+          founded_year?: number | null
+          legal_form?: string | null
+          primary_isic_code?: string | null
+          size_band?: string | null
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_details_country_code_fkey"
+            columns: ["country_code"]
+            isOneToOne: false
+            referencedRelation: "iso_countries"
+            referencedColumns: ["alpha2"]
+          },
+          {
+            foreignKeyName: "company_details_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: true
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_industries: {
+        Row: {
+          as_of: string | null
+          code: string
+          code_system_id: string
+          confidence: number | null
+          created_at: string
+          entity_id: string
+          evidence_doc_id: string | null
+          role: string | null
+          share_pct: number | null
+        }
+        Insert: {
+          as_of?: string | null
+          code: string
+          code_system_id: string
+          confidence?: number | null
+          created_at?: string
+          entity_id: string
+          evidence_doc_id?: string | null
+          role?: string | null
+          share_pct?: number | null
+        }
+        Update: {
+          as_of?: string | null
+          code?: string
+          code_system_id?: string
+          confidence?: number | null
+          created_at?: string
+          entity_id?: string
+          evidence_doc_id?: string | null
+          role?: string | null
+          share_pct?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_industries_code_system_id_fkey"
+            columns: ["code_system_id"]
+            isOneToOne: false
+            referencedRelation: "code_systems"
+            referencedColumns: ["code_system_id"]
+          },
+          {
+            foreignKeyName: "company_industries_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_industries_evidence_doc_id_fkey"
+            columns: ["evidence_doc_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       decision_records: {
         Row: {
           consequences: string | null
@@ -238,9 +380,71 @@ export type Database = {
         }
         Relationships: []
       }
+      document_chunk_embeddings: {
+        Row: {
+          chunk_id: string
+          created_at: string
+          embedding: string
+        }
+        Insert: {
+          chunk_id: string
+          created_at?: string
+          embedding: string
+        }
+        Update: {
+          chunk_id?: string
+          created_at?: string
+          embedding?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_chunk_embeddings_chunk_id_fkey"
+            columns: ["chunk_id"]
+            isOneToOne: true
+            referencedRelation: "document_chunks"
+            referencedColumns: ["chunk_id"]
+          },
+        ]
+      }
+      document_chunks: {
+        Row: {
+          chunk_id: string
+          chunk_text: string
+          created_at: string
+          document_id: string
+          seq: number
+          word_count: number | null
+        }
+        Insert: {
+          chunk_id?: string
+          chunk_text: string
+          created_at?: string
+          document_id: string
+          seq: number
+          word_count?: number | null
+        }
+        Update: {
+          chunk_id?: string
+          chunk_text?: string
+          created_at?: string
+          document_id?: string
+          seq?: number
+          word_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_chunks_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           confidence: number | null
+          content_hash: string | null
           content_preview: string | null
           created_at: string
           doc_type: Database["public"]["Enums"]["doc_type"]
@@ -249,8 +453,10 @@ export type Database = {
           entity_name: string | null
           full_text: string | null
           id: string
+          language: string | null
           metadata: Json | null
           published_date: string | null
+          source_type: string | null
           source_url: string | null
           storage_path: string | null
           title: string
@@ -258,6 +464,7 @@ export type Database = {
         }
         Insert: {
           confidence?: number | null
+          content_hash?: string | null
           content_preview?: string | null
           created_at?: string
           doc_type: Database["public"]["Enums"]["doc_type"]
@@ -266,8 +473,10 @@ export type Database = {
           entity_name?: string | null
           full_text?: string | null
           id?: string
+          language?: string | null
           metadata?: Json | null
           published_date?: string | null
+          source_type?: string | null
           source_url?: string | null
           storage_path?: string | null
           title: string
@@ -275,6 +484,7 @@ export type Database = {
         }
         Update: {
           confidence?: number | null
+          content_hash?: string | null
           content_preview?: string | null
           created_at?: string
           doc_type?: Database["public"]["Enums"]["doc_type"]
@@ -283,8 +493,10 @@ export type Database = {
           entity_name?: string | null
           full_text?: string | null
           id?: string
+          language?: string | null
           metadata?: Json | null
           published_date?: string | null
+          source_type?: string | null
           source_url?: string | null
           storage_path?: string | null
           title?: string
@@ -352,6 +564,108 @@ export type Database = {
         }
         Relationships: []
       }
+      entity_addresses: {
+        Row: {
+          address_id: string
+          address_line1: string | null
+          address_line2: string | null
+          country_code: string | null
+          created_at: string
+          entity_id: string
+          is_hq: boolean | null
+          lat: number | null
+          locality: string | null
+          lon: number | null
+          postal_code: string | null
+          region: string | null
+          updated_at: string
+        }
+        Insert: {
+          address_id?: string
+          address_line1?: string | null
+          address_line2?: string | null
+          country_code?: string | null
+          created_at?: string
+          entity_id: string
+          is_hq?: boolean | null
+          lat?: number | null
+          locality?: string | null
+          lon?: number | null
+          postal_code?: string | null
+          region?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address_id?: string
+          address_line1?: string | null
+          address_line2?: string | null
+          country_code?: string | null
+          created_at?: string
+          entity_id?: string
+          is_hq?: boolean | null
+          lat?: number | null
+          locality?: string | null
+          lon?: number | null
+          postal_code?: string | null
+          region?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_addresses_country_code_fkey"
+            columns: ["country_code"]
+            isOneToOne: false
+            referencedRelation: "iso_countries"
+            referencedColumns: ["alpha2"]
+          },
+          {
+            foreignKeyName: "entity_addresses_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      entity_identifiers: {
+        Row: {
+          created_at: string
+          entity_id: string
+          is_primary: boolean | null
+          namespace: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          entity_id: string
+          is_primary?: boolean | null
+          namespace: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          entity_id?: string
+          is_primary?: boolean | null
+          namespace?: string
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_identifiers_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entity_identifiers_namespace_fkey"
+            columns: ["namespace"]
+            isOneToOne: false
+            referencedRelation: "identifier_namespaces"
+            referencedColumns: ["namespace"]
+          },
+        ]
+      }
       facts: {
         Row: {
           confidence: number | null
@@ -368,6 +682,14 @@ export type Database = {
           status: Database["public"]["Enums"]["fact_status"]
           subject: string
           updated_at: string
+          value_code: string | null
+          value_country: string | null
+          value_date: string | null
+          value_entity_id: string | null
+          value_money_amount: number | null
+          value_money_ccy: string | null
+          value_number: number | null
+          value_pct: number | null
         }
         Insert: {
           confidence?: number | null
@@ -384,6 +706,14 @@ export type Database = {
           status?: Database["public"]["Enums"]["fact_status"]
           subject: string
           updated_at?: string
+          value_code?: string | null
+          value_country?: string | null
+          value_date?: string | null
+          value_entity_id?: string | null
+          value_money_amount?: number | null
+          value_money_ccy?: string | null
+          value_number?: number | null
+          value_pct?: number | null
         }
         Update: {
           confidence?: number | null
@@ -400,8 +730,37 @@ export type Database = {
           status?: Database["public"]["Enums"]["fact_status"]
           subject?: string
           updated_at?: string
+          value_code?: string | null
+          value_country?: string | null
+          value_date?: string | null
+          value_entity_id?: string | null
+          value_money_amount?: number | null
+          value_money_ccy?: string | null
+          value_number?: number | null
+          value_pct?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "facts_value_country_fkey"
+            columns: ["value_country"]
+            isOneToOne: false
+            referencedRelation: "iso_countries"
+            referencedColumns: ["alpha2"]
+          },
+          {
+            foreignKeyName: "facts_value_entity_id_fkey"
+            columns: ["value_entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "facts_value_money_ccy_fkey"
+            columns: ["value_money_ccy"]
+            isOneToOne: false
+            referencedRelation: "iso_currencies"
+            referencedColumns: ["code"]
+          },
           {
             foreignKeyName: "fk_facts_evidence_doc"
             columns: ["evidence_doc_id"]
@@ -446,6 +805,36 @@ export type Database = {
           },
         ]
       }
+      identifier_namespaces: {
+        Row: {
+          created_at: string
+          issuer: string | null
+          label: string
+          namespace: string
+          pattern: string | null
+          scope: string | null
+          url_template: string | null
+        }
+        Insert: {
+          created_at?: string
+          issuer?: string | null
+          label: string
+          namespace: string
+          pattern?: string | null
+          scope?: string | null
+          url_template?: string | null
+        }
+        Update: {
+          created_at?: string
+          issuer?: string | null
+          label?: string
+          namespace?: string
+          pattern?: string | null
+          scope?: string | null
+          url_template?: string | null
+        }
+        Relationships: []
+      }
       ingestion_runs: {
         Row: {
           completed_at: string | null
@@ -479,6 +868,57 @@ export type Database = {
           source_name?: string
           started_at?: string
           status?: Database["public"]["Enums"]["ingestion_status"]
+        }
+        Relationships: []
+      }
+      iso_countries: {
+        Row: {
+          alpha2: string
+          alpha3: string
+          created_at: string
+          name_en: string
+          numeric_code: string | null
+          official_name_en: string | null
+        }
+        Insert: {
+          alpha2: string
+          alpha3: string
+          created_at?: string
+          name_en: string
+          numeric_code?: string | null
+          official_name_en?: string | null
+        }
+        Update: {
+          alpha2?: string
+          alpha3?: string
+          created_at?: string
+          name_en?: string
+          numeric_code?: string | null
+          official_name_en?: string | null
+        }
+        Relationships: []
+      }
+      iso_currencies: {
+        Row: {
+          code: string
+          created_at: string
+          minor_unit: number | null
+          name_en: string
+          numeric_code: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          minor_unit?: number | null
+          name_en: string
+          numeric_code?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          minor_unit?: number | null
+          name_en?: string
+          numeric_code?: string | null
         }
         Relationships: []
       }
@@ -640,6 +1080,45 @@ export type Database = {
             referencedColumns: ["run_id"]
           },
         ]
+      }
+      picklist_company_status: {
+        Row: {
+          code: string
+          created_at: string
+          label: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          label: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          label?: string
+        }
+        Relationships: []
+      }
+      picklist_legal_form: {
+        Row: {
+          code: string
+          country_code: string | null
+          created_at: string
+          label: string
+        }
+        Insert: {
+          code: string
+          country_code?: string | null
+          created_at?: string
+          label: string
+        }
+        Update: {
+          code?: string
+          country_code?: string | null
+          created_at?: string
+          label?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -1007,6 +1486,140 @@ export type Database = {
           },
         ]
       }
+      taxonomy_crosswalks: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          crosswalk_id: string
+          evidence_doc_id: string | null
+          from_code: string
+          from_system_id: string
+          relation: Database["public"]["Enums"]["xwalk_relation"]
+          to_code: string
+          to_system_id: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          crosswalk_id?: string
+          evidence_doc_id?: string | null
+          from_code: string
+          from_system_id: string
+          relation: Database["public"]["Enums"]["xwalk_relation"]
+          to_code: string
+          to_system_id: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          crosswalk_id?: string
+          evidence_doc_id?: string | null
+          from_code?: string
+          from_system_id?: string
+          relation?: Database["public"]["Enums"]["xwalk_relation"]
+          to_code?: string
+          to_system_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "taxonomy_crosswalks_evidence_doc_id_fkey"
+            columns: ["evidence_doc_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "taxonomy_crosswalks_from_system_id_fkey"
+            columns: ["from_system_id"]
+            isOneToOne: false
+            referencedRelation: "code_systems"
+            referencedColumns: ["code_system_id"]
+          },
+          {
+            foreignKeyName: "taxonomy_crosswalks_to_system_id_fkey"
+            columns: ["to_system_id"]
+            isOneToOne: false
+            referencedRelation: "code_systems"
+            referencedColumns: ["code_system_id"]
+          },
+        ]
+      }
+      taxonomy_node_embeddings: {
+        Row: {
+          created_at: string
+          embedding: string
+          node_id: string
+        }
+        Insert: {
+          created_at?: string
+          embedding: string
+          node_id: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: string
+          node_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "taxonomy_node_embeddings_node_id_fkey"
+            columns: ["node_id"]
+            isOneToOne: true
+            referencedRelation: "taxonomy_nodes"
+            referencedColumns: ["node_id"]
+          },
+        ]
+      }
+      taxonomy_nodes: {
+        Row: {
+          code: string
+          code_system_id: string
+          created_at: string
+          description: string | null
+          label: string
+          level: number | null
+          metadata: Json | null
+          node_id: string
+          parent_code: string | null
+          path: unknown
+          synonyms: Json | null
+        }
+        Insert: {
+          code: string
+          code_system_id: string
+          created_at?: string
+          description?: string | null
+          label: string
+          level?: number | null
+          metadata?: Json | null
+          node_id?: string
+          parent_code?: string | null
+          path?: unknown
+          synonyms?: Json | null
+        }
+        Update: {
+          code?: string
+          code_system_id?: string
+          created_at?: string
+          description?: string | null
+          label?: string
+          level?: number | null
+          metadata?: Json | null
+          node_id?: string
+          parent_code?: string | null
+          path?: unknown
+          synonyms?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "taxonomy_nodes_code_system_id_fkey"
+            columns: ["code_system_id"]
+            isOneToOne: false
+            referencedRelation: "code_systems"
+            referencedColumns: ["code_system_id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -1122,6 +1735,7 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      text2ltree: { Args: { "": string }; Returns: unknown }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
@@ -1145,6 +1759,7 @@ export type Database = {
       entity_type: "company" | "person" | "location" | "product" | "event"
       fact_status: "pending" | "verified" | "disputed" | "superseded"
       ingestion_status: "pending" | "running" | "completed" | "failed"
+      xwalk_relation: "exact" | "broader" | "narrower" | "related"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1294,6 +1909,7 @@ export const Constants = {
       entity_type: ["company", "person", "location", "product", "event"],
       fact_status: ["pending", "verified", "disputed", "superseded"],
       ingestion_status: ["pending", "running", "completed", "failed"],
+      xwalk_relation: ["exact", "broader", "narrower", "related"],
     },
   },
 } as const

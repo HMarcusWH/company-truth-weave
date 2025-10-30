@@ -44,9 +44,76 @@ function clampConfidence(value: any): number | null {
 }
 
 /**
+ * Chunks text into overlapping segments for embedding.
+ * Uses 500-word chunks with 50-word overlap to preserve context.
+ */
+function chunkText(text: string, wordsPerChunk = 500, overlapWords = 50): string[] {
+  const words = text.split(/\s+/);
+  const chunks: string[] = [];
+  
+  for (let i = 0; i < words.length; i += (wordsPerChunk - overlapWords)) {
+    const chunk = words.slice(i, i + wordsPerChunk).join(' ');
+    chunks.push(chunk);
+    
+    // Stop if we've covered all words
+    if (i + wordsPerChunk >= words.length) break;
+  }
+  
+  return chunks.length > 0 ? chunks : [text];
+}
+
+/**
+ * Detects typed values from object string and returns appropriate columns.
+ * Supports: numbers, dates, money amounts, percentages, country codes, entity references.
+ */
+function detectTypedValue(objectStr: string, predicate: string): any {
+  const typed: any = {};
+  
+  // Number detection (employees, revenue_millions, etc.)
+  if (/^\d+(\.\d+)?$/.test(objectStr.trim())) {
+    typed.value_number = parseFloat(objectStr);
+  }
+  
+  // Date detection (YYYY-MM-DD, YYYY)
+  const dateMatch = objectStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateMatch) {
+    typed.value_date = objectStr;
+  } else if (/^\d{4}$/.test(objectStr.trim())) {
+    typed.value_date = `${objectStr}-01-01`;
+  }
+  
+  // Money detection (e.g., "1234.56 SEK", "USD 1000")
+  const moneyMatch = objectStr.match(/^([A-Z]{3})\s*([\d,.]+)|^([\d,.]+)\s*([A-Z]{3})$/);
+  if (moneyMatch) {
+    const amount = moneyMatch[2] || moneyMatch[3];
+    const currency = moneyMatch[1] || moneyMatch[4];
+    typed.value_money_amount = parseFloat(amount.replace(/,/g, ''));
+    typed.value_money_ccy = currency;
+  }
+  
+  // Percentage detection (e.g., "23.5%", "50 percent")
+  const pctMatch = objectStr.match(/^([\d.]+)\s*%|^([\d.]+)\s*percent/i);
+  if (pctMatch) {
+    typed.value_pct = parseFloat(pctMatch[1] || pctMatch[2]);
+  }
+  
+  // Country code detection (2-letter ISO codes)
+  if (/^[A-Z]{2}$/.test(objectStr.trim())) {
+    typed.value_country = objectStr;
+  }
+  
+  // Code detection (e.g., ISIC codes, legal forms)
+  if (predicate.includes('industry') || predicate.includes('legal_form') || predicate.includes('status')) {
+    typed.value_code = objectStr;
+  }
+  
+  return typed;
+}
+
+/**
  * Transforms resolver-agent output to database-ready fact rows.
  * Extracts subject-predicate-object triples from nested JSON structures
- * and ensures all required fields are present with valid values.
+ * and detects typed values for structured storage.
  */
 function transformNormalizedFacts(facts: any[] = [], documentId: string) {
   return facts
@@ -74,10 +141,14 @@ function transformNormalizedFacts(facts: any[] = [], documentId: string) {
       const confidenceCandidate = clampConfidence(fact.confidence_numeric ?? derived.confidence);
       const statusCandidate = typeof derived.status === 'string' && FACT_STATUS_VALUES.has(derived.status) ? derived.status : 'verified';
 
+      // Detect typed values
+      const typedValues = detectTypedValue(String(object), String(predicate));
+
       return {
         subject,
         predicate,
         object,
+        ...typedValues, // Add typed columns
         evidence_text: evidenceText ?? null,
         evidence_doc_id: evidenceDocId ?? documentId,
         evidence_span_start: typeof span?.start === 'number' ? span.start : null,
@@ -186,6 +257,34 @@ serve(async (req) => {
     const stepsCompleted: string[] = [];
     const errors: Array<{ step: string; message: string }> = [];
     let agentCallCount = 0;
+
+    // Step 2.5: Chunk document and store with embeddings
+    console.log('Step 2.5: Chunking document...');
+    const chunks = chunkText(documentText);
+    console.log(`Created ${chunks.length} chunks from document`);
+    
+    try {
+      // Store chunks
+      const chunkInserts = chunks.map((text, idx) => ({
+        document_id: documentId,
+        seq: idx,
+        chunk_text: text,
+        word_count: text.split(/\s+/).length
+      }));
+      
+      const { data: insertedChunks, error: chunkError } = await supabase
+        .from('document_chunks')
+        .insert(chunkInserts)
+        .select();
+      
+      if (!chunkError && insertedChunks) {
+        console.log(`Stored ${insertedChunks.length} document chunks`);
+        // Note: Embeddings will be generated asynchronously via a separate process
+      }
+    } catch (error: any) {
+      console.error('Error storing document chunks:', error);
+      // Non-fatal error, continue processing
+    }
 
     // Step 3: Call research-agent
     console.log('Step 1: Calling research-agent...');
