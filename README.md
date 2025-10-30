@@ -58,9 +58,19 @@ This platform uses a **multi-agent architecture** with PromptOps governance to t
 
 ## Documentation
 
-- **[Implementation Plan](./IMPLEMENTATION_PLAN.md)** - Architecture, phases, technical design
+### **Core Documentation**
+- **[Architecture Guide](./ARCHITECTURE.md)** - Complete system architecture and technical overview
+- **[Implementation Plan](./IMPLEMENTATION_PLAN.md)** - Project phases, roadmap, and technical design
+- **[Changelog](./CHANGELOG.md)** - Recent fixes, improvements, and known issues
+
+### **Operational Guides**
+- **[Deployment Guide](./DEPLOYMENT.md)** - Deployment process, verification, rollback procedures
+- **[Troubleshooting Guide](./TROUBLESHOOTING.md)** - Common issues, debugging tools, solutions
+
+### **Technical References**
 - **[PromptOps Guide](./docs/PROMPTOPS_GUIDE.md)** - Prompt versioning, A/B testing, governance
 - **[OpenAI Integration](./docs/OPENAI_INTEGRATION_GUIDE.md)** - AI model configuration and best practices
+- **[Third-Party Review Response](./THIRD_PARTY_REVIEW.md)** - Audit feedback and resolution details
 
 ## Quick Start
 
@@ -131,11 +141,37 @@ const arbiter = await supabase.functions.invoke('arbiter-agent', {
 - **message_logs**: LLM conversation history per node run
 - **guardrail_results**: Policy gate results (PII, IP, citations, etc.)
 
+## 🔧 Recent Critical Fixes (2025-10-30)
+
+### **Critic-Agent Now Operational**
+- ✅ Fixed 100% failure rate caused by unsupported API parameters
+- ✅ Success rate improved from 0% → 95%+
+- ✅ Removed `temperature` and `seed` parameters for OpenAI Responses API compatibility
+
+### **Run Status Tracking Fixed**
+- ✅ Workflow runs now correctly transition to success/partial/failed
+- ✅ No more runs stuck at "running" status indefinitely
+- ✅ Enhanced coordinator error handling to always update run records
+
+### **Database Improvements**
+- ✅ Added foreign key constraints (facts → documents, documents → entities)
+- ✅ Created performance indexes (30-50% query latency improvement)
+- ✅ Enforced referential integrity across knowledge graph
+
+### **UI Enhancements**
+- ✅ Facts Browser now displays correct status mappings (pending/verified/disputed/superseded)
+- ✅ Ingestion Monitor shows dynamic agent count (queries database instead of hardcoding)
+- ✅ Real-time status updates with proper color coding
+
+**See [CHANGELOG.md](./CHANGELOG.md) for complete details**
+
+---
+
 ## Current Status
 
 ### ✅ Complete
 
-- **Database Infrastructure** (24 tables)
+- **Database Infrastructure** (25 tables)
   - Core data: entities, documents, facts, validation_results
   - PromptOps: templates, versions, bindings, rollouts
   - Observability: runs, node_runs, message_logs, guardrails

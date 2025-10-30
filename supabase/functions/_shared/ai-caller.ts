@@ -26,10 +26,33 @@ interface CallAIParams {
  * Model-agnostic AI caller that handles differences between Lovable AI (Gemini)
  * and OpenAI (GPT-5, O3, etc.) APIs.
  * 
- * Key differences handled:
- * - Lovable AI/Gemini: supports temperature, uses max_tokens
- * - OpenAI GPT-5/O3: NO temperature support, uses reasoning_effort, uses max_completion_tokens
- * - Seed support varies by model family
+ * CRITICAL: Parameter Support Matrix
+ * ===================================
+ * 
+ * OpenAI Responses API (gpt-5-mini, o3-mini):
+ * - ✅ reasoning_effort (minimal, low, medium, high)
+ * - ✅ max_output_tokens
+ * - ✅ verbosity (low, medium, high)
+ * - ❌ temperature (NOT SUPPORTED - causes 400 error)
+ * - ❌ seed (NOT SUPPORTED - causes 400 error)
+ * 
+ * OpenAI Chat Completions API (gpt-4.1-mini):
+ * - ✅ temperature (0.0-2.0)
+ * - ✅ max_completion_tokens
+ * - ✅ seed (for reproducibility)
+ * - ❌ reasoning_effort (use temperature instead)
+ * 
+ * Lovable AI (Gemini 2.5 Flash):
+ * - ✅ temperature (0.0-2.0)
+ * - ✅ max_tokens
+ * - ✅ seed (for reproducibility)
+ * - ❌ reasoning_effort (not applicable)
+ * 
+ * IMPORTANT: Always check model_configurations table for parameter support
+ * before including temperature, seed, or reasoning_effort in API calls.
+ * 
+ * Bug Fix (2025-10-30): Removed temperature/seed from critic-agent to fix
+ * 100% failure rate with Responses API models.
  */
 export async function callAI(
   supabaseUrl: string,
@@ -67,6 +90,14 @@ export async function callAI(
 
 /**
  * Handle OpenAI Responses API calls
+ * 
+ * IMPORTANT: Responses API has a DIFFERENT parameter schema than Chat Completions:
+ * - DO NOT include 'temperature' (causes 400 error)
+ * - DO NOT include 'seed' (causes 400 error) unless config.supports_seed = true
+ * - Use 'reasoning_effort' for deterministic control instead
+ * - Max tokens parameter: 'max_output_tokens' (not 'max_completion_tokens')
+ * 
+ * See: https://platform.openai.com/docs/api-reference/responses
  */
 async function callResponsesAPI(config: ModelConfig, params: CallAIParams): Promise<Response> {
   const body: any = {
@@ -114,7 +145,9 @@ async function callResponsesAPI(config: ModelConfig, params: CallAIParams): Prom
     body.max_output_tokens = params.max_output_tokens;
   }
 
-  // Seed (for determinism)
+  // Seed (for determinism) - ONLY if model explicitly supports it
+  // WARNING: Including seed for models that don't support it causes 400 errors
+  // Check model_configurations.supports_seed before enabling
   if (config.supports_seed && params.seed !== undefined) {
     body.seed = params.seed;
   }
@@ -141,7 +174,14 @@ async function callResponsesAPI(config: ModelConfig, params: CallAIParams): Prom
 }
 
 /**
- * Handle Chat Completions API calls (Lovable AI/Gemini)
+ * Handle Chat Completions API calls (Lovable AI/Gemini and OpenAI GPT-4.1)
+ * 
+ * This API version supports standard parameters:
+ * - temperature (0.0-2.0) for randomness control
+ * - seed for reproducibility
+ * - max_completion_tokens (OpenAI) or max_tokens (Lovable AI)
+ * 
+ * Parameter handling is dynamic based on model_configurations table.
  */
 async function callChatCompletionsAPI(config: ModelConfig, params: CallAIParams): Promise<Response> {
   const body: any = {
