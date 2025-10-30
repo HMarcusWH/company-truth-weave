@@ -255,7 +255,12 @@ serve(async (req) => {
 
     const runId = runData.run_id;
     const stepsCompleted: string[] = [];
-    const errors: Array<{ step: string; message: string }> = [];
+    const errors: Array<{ 
+      step: string; 
+      message: string;
+      error_code?: string;
+      error_details?: string;
+    }> = [];
     let agentCallCount = 0;
 
     // Step 2.5: Chunk document and store with embeddings
@@ -403,9 +408,26 @@ serve(async (req) => {
           arbiterResult = arbiterResponse.data;
           stepsCompleted.push('arbiter');
           console.log('Arbiter-agent completed successfully');
+          console.log('Arbiter decision:', arbiterResult?.policy?.decision);
+          
+          // Validate arbiter response structure
+          if (!arbiterResult?.policy || !arbiterResult?.policy?.decision) {
+            console.error('Invalid arbiter response structure:', arbiterResult);
+            errors.push({ 
+              step: 'arbiter', 
+              message: 'Arbiter returned malformed response: missing policy.decision' 
+            });
+          }
         }
       } catch (error: any) {
-        errors.push({ step: 'arbiter', message: error.message });
+        console.error('Arbiter-agent failed:', error);
+        console.error('Error stack:', error.stack);
+        errors.push({ 
+          step: 'arbiter', 
+          message: error.message,
+          error_code: error.code,
+          error_details: error.toString()
+        });
       }
     }
 

@@ -74,15 +74,15 @@ const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions
 
 ## 2. Model Selection Strategy
 
-### Current Agent Mappings
+### Current Agent Mappings (Production)
 
 | Agent | Model | Rationale |
 |-------|-------|-----------|
-| **research-agent** | `google/gemini-2.5-flash` | Balanced speed + accuracy for extraction |
-| **resolver-agent** | `google/gemini-2.5-flash` | Simple deduplication logic |
-| **critic-agent** | `google/gemini-2.5-flash` | Reasoning for validation |
-| **arbiter-agent** | `google/gemini-2.5-flash` | Policy rule application |
-| **coordinator** | N/A | Orchestration only (no AI calls) |
+| **research-agent** | `google/gemini-2.5-pro` | Top-tier extraction accuracy + large context |
+| **resolver-agent** | `google/gemini-2.5-pro` | Advanced entity resolution and deduplication |
+| **critic-agent** | `openai/gpt-5` | Superior reasoning for validation + contradiction detection |
+| **arbiter-agent** | `openai/gpt-5` | Highest quality policy decisions (PII, compliance) |
+| **coordinator** | `google/gemini-2.5-flash` | Fast orchestration + document chunking |
 
 ### When to Use Different Models
 
@@ -474,6 +474,75 @@ for (const test of testCases) {
   assert.deepEqual(result.entities, test.expected.entities);
   assert.deepEqual(result.facts, test.expected.facts);
 }
+```
+
+---
+
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### 1. "Unsupported parameter: temperature" (400 Bad Request)
+
+**Cause:** Using `temperature` or `seed` with OpenAI Responses API models (`gpt-5`, `gpt-5-mini`, `o3-mini`)
+
+**Solution:** 
+- Remove `temperature` and `seed` parameters for Responses API models
+- The `ai-caller.ts` automatically filters these (lines 151-153, 197-206)
+- Use `reasoning_effort` instead for o-series models
+
+```typescript
+// ❌ WRONG - Responses API doesn't support these
+{
+  model: "gpt-5",
+  temperature: 0.1,
+  seed: 42
+}
+
+// ✅ CORRECT
+{
+  model: "gpt-5",
+  reasoning_effort: "medium"
+}
+```
+
+#### 2. Rate Limit Exceeded (429)
+
+**Cause:** Too many requests per minute to Lovable AI
+
+**Solution:** Implemented in `coordinator/index.ts` with exponential backoff
+- Automatically retries with 1s, 2s, 4s delays
+- Check usage: Settings → Workspace → Usage
+- Consider upgrading plan or batching requests
+
+#### 3. "Function call returned invalid JSON"
+
+**Cause:** Model didn't follow function calling schema
+
+**Solution:**
+- Improve system prompt clarity
+- Use `tool_choice` to force function use
+- Add schema validation examples in prompt
+- Switch to more capable model (e.g., `gpt-5` instead of `gpt-5-nano`)
+
+#### 4. Arbiter Agent Not Invoked
+
+**Symptoms:** Pipeline completes but no arbiter decision logged
+
+**Root Cause:** Parameter incompatibility with Responses API
+
+**Fix Applied (2025-10-30):**
+- Removed unsupported `temperature` and `seed` from `arbiter-agent/index.ts`
+- Enhanced error logging in `coordinator/index.ts`
+- Added response validation for malformed arbiter outputs
+
+**Verification:**
+```sql
+-- Check arbiter node runs
+SELECT node_id, status_code, outputs_json->>'decision'
+FROM node_runs 
+WHERE node_id = 'arbiter-agent'
+ORDER BY created_at DESC LIMIT 5;
 ```
 
 ---

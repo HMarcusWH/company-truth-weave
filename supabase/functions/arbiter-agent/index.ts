@@ -196,9 +196,8 @@ serve(async (req) => {
         }
       }],
       tool_choice: { type: 'function', function: { name: 'apply_policies' } },
-      temperature: 0.1,
-      reasoning_effort: agentData.reasoning_effort || 'low',
-      seed: 42
+      reasoning_effort: agentData.reasoning_effort || 'medium'
+      // Note: temperature and seed removed - not supported by Responses API
     });
 
     if (!aiResponse.ok) {
