@@ -12,6 +12,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let runId: string | null = null;
+
   try {
     const { documentText, documentId, environment = 'dev' } = await req.json();
     
@@ -78,7 +80,7 @@ serve(async (req) => {
       .from('runs')
       .insert({
         env_code: environment,
-        status_code: 'success',
+        status_code: 'running',
         started_at: new Date().toISOString()
       })
       .select()
@@ -91,6 +93,8 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    runId = run.run_id;
 
     const startTime = Date.now();
 
@@ -302,6 +306,20 @@ Use the extract_entities function to return structured data.`;
 
   } catch (error) {
     console.error('Research agent error:', error);
+
+    if (runId) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+      if (supabaseUrl && supabaseServiceKey) {
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        await supabase
+          .from('runs')
+          .update({ status_code: 'error', ended_at: new Date().toISOString() })
+          .eq('run_id', runId);
+      }
+    }
+
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
