@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,7 +30,7 @@ serve(async (req) => {
     // Step 1: Fetch active prompt binding for research-agent in this environment
     const { data: agent, error: agentError } = await supabase
       .from('agent_definitions')
-      .select('agent_id, name, model_family_code, max_tokens')
+      .select('agent_id, name, model_family_code, max_tokens, preferred_model_family, reasoning_effort')
       .eq('name', 'research-agent')
       .single();
 
@@ -103,76 +104,72 @@ serve(async (req) => {
 
 Use the extract_entities function to return structured data.`;
 
-    // Step 4: Call Lovable AI with function calling
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        temperature: 0.7, // Creative extraction
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: documentText }
-        ],
-        tools: [{
-          type: 'function',
-          function: {
-            name: 'extract_entities',
-            description: 'Extract structured entities, relationships, and facts from company documents',
-            parameters: {
-              type: 'object',
-              properties: {
-                entities: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      name: { type: 'string' },
-                      entity_type: { type: 'string', enum: ['company', 'person', 'product', 'location', 'other'] },
-                      aliases: { type: 'array', items: { type: 'string' } }
-                    },
-                    required: ['name', 'entity_type']
-                  }
-                },
-                facts: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      statement: { type: 'string' },
-                      evidence: { type: 'string' },
-                      evidence_span: {
-                        type: 'object',
-                        description: 'Character offsets in document where evidence was found',
-                        properties: {
-                          start: { type: 'number', description: 'Starting character offset' },
-                          end: { type: 'number', description: 'Ending character offset' }
-                        },
-                        required: ['start', 'end']
-                      },
-                      confidence: { type: 'number', minimum: 0, maximum: 1 },
-                      entity_name: { type: 'string' }
-                    },
-                    required: ['statement', 'evidence', 'evidence_span', 'confidence']
-                  }
+    // Step 4: Call AI using model-agnostic caller
+    const modelName = agent.preferred_model_family.includes('/') 
+      ? agent.preferred_model_family 
+      : `google/${agent.preferred_model_family}`;
+
+    const aiResponse = await callAI(supabaseUrl, supabaseServiceKey, {
+      model: modelName,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: documentText }
+      ],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'extract_entities',
+          description: 'Extract structured entities, relationships, and facts from company documents',
+          parameters: {
+            type: 'object',
+            properties: {
+              entities: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    entity_type: { type: 'string', enum: ['company', 'person', 'product', 'location', 'other'] },
+                    aliases: { type: 'array', items: { type: 'string' } }
+                  },
+                  required: ['name', 'entity_type']
                 }
               },
-              required: ['entities', 'facts']
-            }
+              facts: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    statement: { type: 'string' },
+                    evidence: { type: 'string' },
+                    evidence_span: {
+                      type: 'object',
+                      description: 'Character offsets in document where evidence was found',
+                      properties: {
+                        start: { type: 'number', description: 'Starting character offset' },
+                        end: { type: 'number', description: 'Ending character offset' }
+                      },
+                      required: ['start', 'end']
+                    },
+                    confidence: { type: 'number', minimum: 0, maximum: 1 },
+                    entity_name: { type: 'string' }
+                  },
+                  required: ['statement', 'evidence', 'evidence_span', 'confidence']
+                }
+              }
+            },
+            required: ['entities', 'facts']
           }
-        }],
-        tool_choice: { type: 'function', function: { name: 'extract_entities' } }
-      }),
+        }
+      }],
+      tool_choice: { type: 'function', function: { name: 'extract_entities' } },
+      temperature: 0.7,
+      reasoning_effort: agent.reasoning_effort || undefined
     });
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error('AI gateway error:', aiResponse.status, errorText);
+      console.error('AI API error:', aiResponse.status, errorText);
       
       // Update run status to error
       await supabase
@@ -186,7 +183,7 @@ Use the extract_entities function to return structured data.`;
       );
     }
 
-    const aiData = await aiResponse.json();
+    const aiData = await parseAIResponse(aiResponse);
     const endTime = Date.now();
     const latencyMs = endTime - startTime;
 
@@ -202,7 +199,7 @@ Use the extract_entities function to return structured data.`;
         node_id: 'research-agent',
         agent_id: agent.agent_id,
         prompt_version_id: promptVersion.prompt_version_id,
-        model_family_code: 'gemini-2.5-flash',
+        model_family_code: agent.preferred_model_family,
         input_vars_json: inputVars,
         rendered_prompt_text: systemPrompt,
         outputs_json: extractedData,

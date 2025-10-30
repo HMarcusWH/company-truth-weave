@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.77.0";
+import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,7 +31,7 @@ serve(async (req) => {
     // Step 1: Fetch agent definition
     const { data: agentData, error: agentError } = await supabase
       .from('agent_definitions')
-      .select('agent_id, name')
+      .select('agent_id, name, preferred_model_family, reasoning_effort')
       .eq('name', 'resolver-agent')
       .single();
 
@@ -92,79 +93,75 @@ serve(async (req) => {
 
     const runId = runData.run_id;
 
-    // Step 4: Call Lovable AI with function calling
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-
+    // Step 4: Call AI using model-agnostic caller
     const inputData = JSON.stringify({ entities: entities || [], facts: facts || [] });
 
+    const modelName = agentData.preferred_model_family.includes('/') 
+      ? agentData.preferred_model_family 
+      : `google/${agentData.preferred_model_family}`;
+
     const aiStartTime = Date.now();
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        temperature: 0.7, // Balanced normalization
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: inputData }
-        ],
-        tools: [{
-          type: 'function',
-          function: {
-            name: 'normalize_data',
-            description: 'Normalize entities and facts to canonical forms and schemas',
-            parameters: {
-              type: 'object',
-              properties: {
-                normalized_entities: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      original_name: { type: 'string' },
-                      canonical_name: { type: 'string' },
-                      entity_type: { 
-                        type: 'string',
-                        enum: ['company', 'person', 'product', 'location', 'other']
-                      },
-                      derived: { type: 'object' }
+    const aiResponse = await callAI(supabaseUrl, supabaseKey, {
+      model: modelName,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: inputData }
+      ],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'normalize_data',
+          description: 'Normalize entities and facts to canonical forms and schemas',
+          parameters: {
+            type: 'object',
+            properties: {
+              normalized_entities: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    original_name: { type: 'string' },
+                    canonical_name: { type: 'string' },
+                    entity_type: { 
+                      type: 'string',
+                      enum: ['company', 'person', 'product', 'location', 'other']
                     },
-                    required: ['original_name', 'canonical_name', 'entity_type']
-                  }
-                },
-                normalized_facts: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      original_statement: { type: 'string' },
-                      normalized_statement: { type: 'string' },
-                      confidence_numeric: { type: 'number', minimum: 0, maximum: 1 },
-                      derived: { type: 'object' }
-                    },
-                    required: ['original_statement', 'normalized_statement', 'confidence_numeric']
-                  }
-                },
-                unknown_values: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      field: { type: 'string' },
-                      reason: { type: 'string' }
-                    }
-                  }
+                    derived: { type: 'object' }
+                  },
+                  required: ['original_name', 'canonical_name', 'entity_type']
                 }
               },
-              required: ['normalized_entities', 'normalized_facts', 'unknown_values']
-            }
+              normalized_facts: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    original_statement: { type: 'string' },
+                    normalized_statement: { type: 'string' },
+                    confidence_numeric: { type: 'number', minimum: 0, maximum: 1 },
+                    derived: { type: 'object' }
+                  },
+                  required: ['original_statement', 'normalized_statement', 'confidence_numeric']
+                }
+              },
+              unknown_values: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    field: { type: 'string' },
+                    reason: { type: 'string' }
+                  }
+                }
+              }
+            },
+            required: ['normalized_entities', 'normalized_facts', 'unknown_values']
           }
-        }],
-        tool_choice: { type: 'function', function: { name: 'normalize_data' } }
-      }),
+        }
+      }],
+      tool_choice: { type: 'function', function: { name: 'normalize_data' } },
+      temperature: 0.7,
+      reasoning_effort: agentData.reasoning_effort || undefined
     });
 
     if (!aiResponse.ok) {
@@ -186,7 +183,7 @@ serve(async (req) => {
       );
     }
 
-    const aiData = await aiResponse.json();
+    const aiData = await parseAIResponse(aiResponse);
     const aiLatency = Date.now() - aiStartTime;
 
     // Step 5: Parse AI response
@@ -224,8 +221,8 @@ serve(async (req) => {
         },
         outputs_json: normalizedData,
         tool_calls_json: [toolCall],
-        model_family_code: 'gemini',
-        model_params_json: { model: 'google/gemini-2.5-flash' },
+        model_family_code: agentData.preferred_model_family,
+        model_params_json: { model: modelName },
         tokens_input: aiData.usage?.prompt_tokens || 0,
         tokens_output: aiData.usage?.completion_tokens || 0,
         latency_ms: aiLatency,

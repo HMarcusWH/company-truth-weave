@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.77.0";
+import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,7 +31,7 @@ serve(async (req) => {
     // Step 1: Fetch agent definition
     const { data: agentData, error: agentError } = await supabase
       .from('agent_definitions')
-      .select('agent_id, name')
+      .select('agent_id, name, preferred_model_family, reasoning_effort')
       .eq('name', 'arbiter-agent')
       .single();
 
@@ -92,76 +93,72 @@ serve(async (req) => {
 
     const runId = runData.run_id;
 
-    // Step 4: Call Lovable AI with function calling
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-
+    // Step 4: Call AI using model-agnostic caller with deterministic settings
     const inputData = JSON.stringify({ facts: facts || [], entities: entities || [] });
 
+    const modelName = agentData.preferred_model_family.includes('/') 
+      ? agentData.preferred_model_family 
+      : `google/${agentData.preferred_model_family}`;
+
     const aiStartTime = Date.now();
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        temperature: 0.1, // Deterministic policy decisions
-        seed: 42, // Reproducibility
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: inputData }
-        ],
-        tools: [{
-          type: 'function',
-          function: {
-            name: 'apply_policies',
-            description: 'Apply policy gates for PII, IP, compliance, and citation requirements',
-            parameters: {
-              type: 'object',
-              properties: {
-                decision: {
-                  type: 'string',
-                  enum: ['ALLOW', 'BLOCK', 'WARN']
-                },
-                reasons: {
-                  type: 'array',
-                  items: { type: 'string' }
-                },
-                pii_detected: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      type: { 
-                        type: 'string',
-                        enum: ['ssn', 'credit_card', 'phone', 'email', 'medical_record']
-                      },
-                      location: { type: 'string' }
-                    }
+    const aiResponse = await callAI(supabaseUrl, supabaseKey, {
+      model: modelName,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: inputData }
+      ],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'apply_policies',
+          description: 'Apply policy gates for PII, IP, compliance, and citation requirements',
+          parameters: {
+            type: 'object',
+            properties: {
+              decision: {
+                type: 'string',
+                enum: ['ALLOW', 'BLOCK', 'WARN']
+              },
+              reasons: {
+                type: 'array',
+                items: { type: 'string' }
+              },
+              pii_detected: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    type: { 
+                      type: 'string',
+                      enum: ['ssn', 'credit_card', 'phone', 'email', 'medical_record']
+                    },
+                    location: { type: 'string' }
                   }
-                },
-                missing_citations: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      fact_id: { type: 'string' },
-                      confidence: { type: 'number' }
-                    }
-                  }
-                },
-                disclosures: {
-                  type: 'array',
-                  items: { type: 'string' }
                 }
               },
-              required: ['decision', 'reasons']
-            }
+              missing_citations: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    fact_id: { type: 'string' },
+                    confidence: { type: 'number' }
+                  }
+                }
+              },
+              disclosures: {
+                type: 'array',
+                items: { type: 'string' }
+              }
+            },
+            required: ['decision', 'reasons']
           }
-        }],
-        tool_choice: { type: 'function', function: { name: 'apply_policies' } }
-      }),
+        }
+      }],
+      tool_choice: { type: 'function', function: { name: 'apply_policies' } },
+      temperature: 0.1,
+      reasoning_effort: agentData.reasoning_effort || 'low',
+      seed: 42
     });
 
     if (!aiResponse.ok) {
@@ -183,7 +180,7 @@ serve(async (req) => {
       );
     }
 
-    const aiData = await aiResponse.json();
+    const aiData = await parseAIResponse(aiResponse);
     const aiLatency = Date.now() - aiStartTime;
 
     // Step 5: Parse AI response
@@ -221,8 +218,8 @@ serve(async (req) => {
         },
         outputs_json: policyResult,
         tool_calls_json: [toolCall],
-        model_family_code: 'gemini',
-        model_params_json: { model: 'google/gemini-2.5-flash' },
+        model_family_code: agentData.preferred_model_family,
+        model_params_json: { model: modelName },
         tokens_input: aiData.usage?.prompt_tokens || 0,
         tokens_output: aiData.usage?.completion_tokens || 0,
         latency_ms: aiLatency,

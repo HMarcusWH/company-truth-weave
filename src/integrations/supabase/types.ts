@@ -19,10 +19,13 @@ export type Database = {
           agent_id: string
           budgets_json: Json | null
           created_at: string
+          fallback_model_family: string | null
           max_tokens: number | null
           model_family_code: string
           name: string
           params_json: Json | null
+          preferred_model_family: string | null
+          reasoning_effort: string | null
           role_kind_code: string
           tools_allowed: string[] | null
         }
@@ -30,10 +33,13 @@ export type Database = {
           agent_id?: string
           budgets_json?: Json | null
           created_at?: string
+          fallback_model_family?: string | null
           max_tokens?: number | null
           model_family_code: string
           name: string
           params_json?: Json | null
+          preferred_model_family?: string | null
+          reasoning_effort?: string | null
           role_kind_code: string
           tools_allowed?: string[] | null
         }
@@ -41,10 +47,13 @@ export type Database = {
           agent_id?: string
           budgets_json?: Json | null
           created_at?: string
+          fallback_model_family?: string | null
           max_tokens?: number | null
           model_family_code?: string
           name?: string
           params_json?: Json | null
+          preferred_model_family?: string | null
+          reasoning_effort?: string | null
           role_kind_code?: string
           tools_allowed?: string[] | null
         }
@@ -500,6 +509,42 @@ export type Database = {
             referencedColumns: ["node_run_id"]
           },
         ]
+      }
+      model_configurations: {
+        Row: {
+          api_endpoint: string
+          config_id: string
+          created_at: string | null
+          max_output_tokens_param: string | null
+          model_family_code: string
+          reasoning_effort_levels: string[] | null
+          supports_seed: boolean | null
+          supports_temperature: boolean | null
+          temperature_default: number | null
+        }
+        Insert: {
+          api_endpoint: string
+          config_id?: string
+          created_at?: string | null
+          max_output_tokens_param?: string | null
+          model_family_code: string
+          reasoning_effort_levels?: string[] | null
+          supports_seed?: boolean | null
+          supports_temperature?: boolean | null
+          temperature_default?: number | null
+        }
+        Update: {
+          api_endpoint?: string
+          config_id?: string
+          created_at?: string | null
+          max_output_tokens_param?: string | null
+          model_family_code?: string
+          reasoning_effort_levels?: string[] | null
+          supports_seed?: boolean | null
+          supports_temperature?: boolean | null
+          temperature_default?: number | null
+        }
+        Relationships: []
       }
       node_runs: {
         Row: {

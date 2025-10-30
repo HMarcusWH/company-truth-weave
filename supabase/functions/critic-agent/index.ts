@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.77.0";
+import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,7 +31,7 @@ serve(async (req) => {
     // Step 1: Fetch agent definition
     const { data: agentData, error: agentError } = await supabase
       .from('agent_definitions')
-      .select('agent_id, name')
+      .select('agent_id, name, preferred_model_family, reasoning_effort')
       .eq('name', 'critic-agent')
       .single();
 
@@ -108,85 +109,81 @@ serve(async (req) => {
 
     const runId = runData.run_id;
 
-    // Step 5: Call Lovable AI with function calling
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    // Step 5: Call AI using model-agnostic caller with deterministic settings
+    const modelName = agentData.preferred_model_family.includes('/') 
+      ? agentData.preferred_model_family 
+      : `google/${agentData.preferred_model_family}`;
 
     const aiStartTime = Date.now();
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        temperature: 0.1, // Deterministic validation
-        seed: 42, // Reproducibility
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: JSON.stringify(facts) }
-        ],
-        tools: [{
-          type: 'function',
-          function: {
-            name: 'validate_facts',
-            description: 'Validate the quality and consistency of extracted facts. Run contradiction tests by grouping facts by (subject, predicate) and flagging when same subject+predicate maps to different objects without qualifiers.',
-            parameters: {
-              type: 'object',
-              properties: {
-                is_valid: { type: 'boolean' },
-                contradictions: {
-                  type: 'array',
-                  description: 'Detected contradictions where same subject+predicate maps to different objects',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      subject: { type: 'string', description: 'The entity (e.g., "Acme Inc")' },
-                      predicate: { type: 'string', description: 'The relationship (e.g., "CEO")' },
-                      conflicting_objects: { 
-                        type: 'array',
-                        items: { type: 'string' },
-                        description: 'Different values found (e.g., ["John Doe", "Jane Smith"])'
-                      },
-                      fact_ids: {
-                        type: 'array',
-                        items: { type: 'string' },
-                        description: 'IDs of conflicting facts'
-                      },
-                      reason: { type: 'string', description: 'Explanation of the contradiction' }
+    const aiResponse = await callAI(supabaseUrl, supabaseKey, {
+      model: modelName,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: JSON.stringify(facts) }
+      ],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'validate_facts',
+          description: 'Validate the quality and consistency of extracted facts. Run contradiction tests by grouping facts by (subject, predicate) and flagging when same subject+predicate maps to different objects without qualifiers.',
+          parameters: {
+            type: 'object',
+            properties: {
+              is_valid: { type: 'boolean' },
+              contradictions: {
+                type: 'array',
+                description: 'Detected contradictions where same subject+predicate maps to different objects',
+                items: {
+                  type: 'object',
+                  properties: {
+                    subject: { type: 'string', description: 'The entity (e.g., "Acme Inc")' },
+                    predicate: { type: 'string', description: 'The relationship (e.g., "CEO")' },
+                    conflicting_objects: { 
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'Different values found (e.g., ["John Doe", "Jane Smith"])'
                     },
-                    required: ['subject', 'predicate', 'conflicting_objects', 'fact_ids', 'reason']
-                  }
-                },
-                missing_citations: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      fact_id: { type: 'string' },
-                      issue: { type: 'string' }
+                    fact_ids: {
+                      type: 'array',
+                      items: { type: 'string' },
+                      description: 'IDs of conflicting facts'
                     },
-                    required: ['fact_id', 'issue']
-                  }
-                },
-                schema_errors: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      fact_id: { type: 'string' },
-                      error: { type: 'string' }
-                    },
-                    required: ['fact_id', 'error']
-                  }
+                    reason: { type: 'string', description: 'Explanation of the contradiction' }
+                  },
+                  required: ['subject', 'predicate', 'conflicting_objects', 'fact_ids', 'reason']
                 }
               },
-              required: ['is_valid', 'contradictions', 'missing_citations', 'schema_errors']
-            }
+              missing_citations: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    fact_id: { type: 'string' },
+                    issue: { type: 'string' }
+                  },
+                  required: ['fact_id', 'issue']
+                }
+              },
+              schema_errors: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    fact_id: { type: 'string' },
+                    error: { type: 'string' }
+                  },
+                  required: ['fact_id', 'error']
+                }
+              }
+            },
+            required: ['is_valid', 'contradictions', 'missing_citations', 'schema_errors']
           }
-        }],
-        tool_choice: { type: 'function', function: { name: 'validate_facts' } }
-      }),
+        }
+      }],
+      tool_choice: { type: 'function', function: { name: 'validate_facts' } },
+      temperature: 0.1,
+      reasoning_effort: agentData.reasoning_effort || 'low',
+      seed: 42
     });
 
     if (!aiResponse.ok) {
@@ -208,7 +205,7 @@ serve(async (req) => {
       );
     }
 
-    const aiData = await aiResponse.json();
+    const aiData = await parseAIResponse(aiResponse);
     const aiLatency = Date.now() - aiStartTime;
 
     // Step 6: Parse AI response
@@ -243,8 +240,8 @@ serve(async (req) => {
         input_vars_json: { documentId, factsCount: facts.length },
         outputs_json: validationResult,
         tool_calls_json: [toolCall],
-        model_family_code: 'gemini',
-        model_params_json: { model: 'google/gemini-2.5-flash' },
+        model_family_code: agentData.preferred_model_family,
+        model_params_json: { model: modelName },
         tokens_input: aiData.usage?.prompt_tokens || 0,
         tokens_output: aiData.usage?.completion_tokens || 0,
         latency_ms: aiLatency,
