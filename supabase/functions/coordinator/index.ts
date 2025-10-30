@@ -54,7 +54,7 @@ function transformNormalizedFacts(facts: any[] = [], documentId: string) {
         created_by: null
       };
     })
-    .filter((fact): fact is Record<string, unknown> => Boolean(fact));
+    .filter(fact => Boolean(fact));
 }
 
 async function retryWithBackoff(fn: () => Promise<any>, retries = 0): Promise<any> {
@@ -395,6 +395,33 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Unexpected error in coordinator:', error);
+    
+    // Try to mark run as failed if we have a runId
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (supabaseUrl && supabaseKey) {
+        const supabase = createClient(supabaseUrl, supabaseKey);
+        // Only update runs that are still in 'running' status
+        await supabase
+          .from('runs')
+          .update({
+            status_code: 'failed',
+            ended_at: new Date().toISOString(),
+            metrics_json: {
+              error_message: error.message || 'Internal server error',
+              error_stage: 'coordinator-initialization',
+              failed_at: new Date().toISOString()
+            }
+          })
+          .eq('status_code', 'running')
+          .order('started_at', { ascending: false })
+          .limit(1);
+      }
+    } catch (updateError) {
+      console.error('Failed to update run status on error:', updateError);
+    }
+    
     return new Response(
       JSON.stringify({ error: error.message || 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
