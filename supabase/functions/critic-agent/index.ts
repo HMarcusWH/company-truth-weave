@@ -1,3 +1,26 @@
+/**
+ * Critic Agent Edge Function
+ * 
+ * Purpose: Validate fact quality, consistency, and evidence completeness.
+ * 
+ * Input:
+ * - documentId: UUID of document to validate facts for
+ * - facts: Optional array of facts to validate (falls back to DB query)
+ * - environment: Target environment
+ * 
+ * Output:
+ * - is_valid: Boolean indicating whether facts pass validation
+ * - contradictions: Detected conflicts (same subject+predicate, different objects)
+ * - missing_citations: Facts without proper evidence attribution
+ * - schema_errors: Facts that don't conform to expected structure
+ * 
+ * Validation checks:
+ * - Contradiction detection: Group by (subject, predicate) and flag conflicts
+ * - Citation enforcement: Ensure all facts have evidence_text and evidence_doc_id
+ * - Schema validation: Verify required fields and confidence score ranges
+ * - Deterministic execution: Uses seed=42 and temperature=0.1 for reproducibility
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.77.0";
 import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";

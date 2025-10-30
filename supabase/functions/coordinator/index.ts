@@ -1,3 +1,20 @@
+/**
+ * Coordinator Edge Function
+ * 
+ * Orchestrates the multi-agent pipeline for document ingestion:
+ * 1. Research Agent - Extract entities and facts from raw text
+ * 2. Resolver Agent - Normalize and deduplicate data
+ * 3. Critic Agent - Validate for contradictions and quality
+ * 4. Arbiter Agent - Apply policy gates (PII, citations)
+ * 5. Storage - Persist entities and facts to database
+ * 
+ * Features:
+ * - Exponential backoff retry logic for failed agents
+ * - Budget enforcement (max calls and latency)
+ * - Comprehensive error handling and logging
+ * - Conditional storage based on arbiter approval
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.77.0";
 
@@ -6,13 +23,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 5;
-const MAX_AGENT_CALLS = 5;
-const MAX_LATENCY_MS = 60000;
+// Budget constraints to prevent runaway costs
+const MAX_RETRIES = 5;        // Maximum retry attempts per agent
+const MAX_AGENT_CALLS = 5;    // Maximum total agent invocations
+const MAX_LATENCY_MS = 60000; // Maximum total pipeline latency (60s)
 
+// Valid fact status values for database storage
 const FACT_STATUS_VALUES = new Set(['pending', 'verified', 'disputed', 'superseded']);
 
-function clampConfidence(value: any) {
+/**
+ * Clamps confidence scores to [0.0, 1.0] range and rounds to 2 decimal places.
+ * Returns null for invalid values.
+ */
+function clampConfidence(value: any): number | null {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return null;
   }
@@ -20,6 +43,11 @@ function clampConfidence(value: any) {
   return Math.round(bounded * 100) / 100;
 }
 
+/**
+ * Transforms resolver-agent output to database-ready fact rows.
+ * Extracts subject-predicate-object triples from nested JSON structures
+ * and ensures all required fields are present with valid values.
+ */
 function transformNormalizedFacts(facts: any[] = [], documentId: string) {
   return facts
     .map((fact: any) => {
@@ -57,6 +85,11 @@ function transformNormalizedFacts(facts: any[] = [], documentId: string) {
     .filter(fact => Boolean(fact));
 }
 
+/**
+ * Implements exponential backoff retry logic for agent invocations.
+ * Retries on rate limits and service errors, but not on client errors (4xx).
+ * Delay formula: 2^retries * 1000ms (1s, 2s, 4s, 8s, 16s)
+ */
 async function retryWithBackoff(fn: () => Promise<any>, retries = 0): Promise<any> {
   try {
     const response = await fn();

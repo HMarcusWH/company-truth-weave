@@ -135,19 +135,38 @@ const arbiter = await supabase.functions.invoke('arbiter-agent', {
 
 ### ✅ Complete
 
-- Database schema (24 tables)
-- 5 agent edge functions deployed
-- PromptOps infrastructure (versioning, bindings, rollouts)
-- Research-agent A/B test (90% v1.0.0, 10% v2.0.0)
-- Frontend dashboard (auth, documents, facts browser)
-- Full RLS policies
+- **Database Infrastructure** (24 tables)
+  - Core data: entities, documents, facts, validation_results
+  - PromptOps: templates, versions, bindings, rollouts
+  - Observability: runs, node_runs, message_logs, guardrails
+  - Governance: change_requests, approval_policies
+  - Auth: profiles, user_roles with RLS
+
+- **Multi-Agent Pipeline**
+  - 5 deployed edge functions with full observability
+  - Model-agnostic AI integration (Gemini 2.5 Flash, GPT-5 Mini)
+  - Coordinator orchestration with retry logic
+  - Budget enforcement (max 5 calls, 60s latency)
+
+- **PromptOps Features**
+  - Versioned prompts (semver + state management)
+  - Environment-specific bindings (dev/staging/prod)
+  - Traffic-weighted A/B testing
+  - Full execution audit trail
+
+- **Frontend Dashboard**
+  - Authentication with role-based access
+  - Pipeline test interface
+  - Entity and document management
+  - Facts browser with validation status
+  - Real-time ingestion monitoring
 
 ### 🚧 In Progress
 
-- Admin UI for prompt management
-- Vector search + embeddings
-- Document storage buckets
-- Overseer agent (automated quality monitoring)
+- Admin UI for prompt/agent management
+- Vector search with pgvector
+- Document storage integration
+- Embedding generation pipeline
 
 ## Technology Stack
 

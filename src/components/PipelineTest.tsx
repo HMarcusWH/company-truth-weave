@@ -1,3 +1,23 @@
+/**
+ * PipelineTest Component
+ * 
+ * Interactive testing interface for the multi-agent pipeline.
+ * 
+ * Workflow:
+ * 1. User pastes/loads document text
+ * 2. Creates document record in database
+ * 3. Invokes coordinator edge function
+ * 4. Displays results with metrics and agent execution status
+ * 
+ * Features:
+ * - Sample document loader
+ * - Real-time execution status
+ * - Detailed metrics (extracted vs stored counts)
+ * - Agent-by-agent execution breakdown
+ * - Collapsible raw JSON output
+ * - Error display
+ */
+
 import { useState } from "react";
 import { Play, Loader2, CheckCircle2, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -9,6 +29,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 
+// Sample press release for testing the pipeline
 const SAMPLE_DOCUMENT = `Acme Corporation Press Release
 
 San Francisco, CA - March 15, 2024

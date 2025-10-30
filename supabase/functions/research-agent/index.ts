@@ -1,3 +1,24 @@
+/**
+ * Research Agent Edge Function
+ * 
+ * Purpose: Extract structured entities, relationships, and facts from unstructured documents.
+ * 
+ * Input:
+ * - documentText: Raw text content to analyze
+ * - documentId: UUID of source document
+ * - environment: Target environment ('dev', 'staging', 'prod')
+ * 
+ * Output:
+ * - entities: Array of extracted entity mentions (companies, people, products)
+ * - facts: Array of statements with evidence spans and confidence scores
+ * 
+ * Features:
+ * - PromptOps integration (versioned prompts, A/B testing)
+ * - Model-agnostic AI calling (supports Gemini and GPT models)
+ * - Structured output via function calling
+ * - Full observability (runs, node_runs, message_logs, guardrails)
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";

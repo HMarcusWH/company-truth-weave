@@ -1,3 +1,15 @@
+/**
+ * CompanySearch Component
+ * 
+ * Provides entity search and detail view functionality.
+ * 
+ * Features:
+ * - Real-time search with debounce (250ms)
+ * - Displays companies from entities table
+ * - Shows identifiers, addresses, relationships
+ * - Hover effects and selection highlighting
+ */
+
 import { useEffect, useMemo, useState } from "react";
 import { Search, Building2, MapPin, Link2, Globe, Calendar, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -8,7 +20,7 @@ import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/use-toast";
 
-// Types for normalized company shape used by the UI
+// Normalized company shape for UI display
 type Company = {
   id: string;
   legal_name: string;

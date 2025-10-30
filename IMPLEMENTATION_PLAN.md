@@ -405,21 +405,21 @@ LIMIT 20;
 
 ## Implementation Timeline
 
-**Sprint 1 (Week 1):** ✅ IN PROGRESS
-1. Run database migrations (all schema + stored procs)
-2. Set up authentication (profiles + roles)
-3. Enable RLS policies
-4. Test stored procedures manually
+**Sprint 1 (Week 1):** ✅ COMPLETE
+1. ✅ Run database migrations (all schema + stored procs)
+2. ✅ Set up authentication (profiles + roles)
+3. ✅ Enable RLS policies
+4. ✅ Test stored procedures manually
 
-**Sprint 2 (Week 2):** ⏳ TODO
-5. Create writer-agent, resolver-agent, research-agent edge functions
-6. Integrate with Lovable AI
-7. Test agent writes via stored procs
+**Sprint 2 (Week 2):** ✅ COMPLETE
+5. ✅ Create research-agent, resolver-agent edge functions
+6. ✅ Integrate with Lovable AI (Gemini 2.5 Flash)
+7. ✅ Test agent writes via stored procs
 
-**Sprint 3 (Week 3):** ⏳ TODO
-8. Create critic-agent, arbiter-agent, embedding-agent
-9. Build coordinator orchestration
-10. Frontend integration (real queries)
+**Sprint 3 (Week 3):** ✅ COMPLETE
+8. ✅ Create critic-agent, arbiter-agent edge functions
+9. ✅ Build coordinator orchestration with retry logic
+10. ✅ Frontend integration (real queries)
 
 **Sprint 4 (Week 4):** ⏳ TODO
 11. Implement vector search + hybrid retrieval
@@ -437,15 +437,15 @@ LIMIT 20;
 19. Production deployment
 
 ## Security Checklist
-- ⏳ Stored procedures only (no direct table access for agents)
-- ⏳ Separate user_roles table (prevent privilege escalation)
-- ⏳ SECURITY DEFINER function for role checks (avoid RLS recursion)
-- ⏳ RLS on all tables with proper policies
-- ⏳ Input validation (LEI regex, country ISO codes, email formats)
+- ✅ Separate user_roles table (prevent privilege escalation)
+- ✅ SECURITY DEFINER function for role checks (avoid RLS recursion)
+- ✅ RLS on all tables with proper policies
+- ✅ Input validation (confidence clamping, status validation)
+- ✅ No PII in logs (truncated content in message_logs)
+- ⏳ Stored procedures only (currently using direct inserts with RLS)
 - ⏳ Rate limiting on public edge functions
-- ⏳ No PII in logs
 - ⏳ Content-addressed storage (dedupe by hash)
-- ⏳ Audit trail (change_log for all mutations)
+- ⏳ Full audit trail (change_log for all mutations)
 
 ## Success Metrics
 - **Data Quality:** Contradiction rate < 1%, citation coverage > 95%

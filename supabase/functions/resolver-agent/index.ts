@@ -1,3 +1,25 @@
+/**
+ * Resolver Agent Edge Function
+ * 
+ * Purpose: Normalize and deduplicate entities and facts to canonical forms.
+ * 
+ * Input:
+ * - entities: Raw entity extractions from research-agent
+ * - facts: Raw fact extractions from research-agent
+ * - environment: Target environment
+ * 
+ * Output:
+ * - normalized_entities: Canonical entity names and types
+ * - normalized_facts: Standardized subject-predicate-object triples
+ * - unknown_values: Fields that couldn't be normalized
+ * 
+ * Normalization tasks:
+ * - Resolve company name variants (e.g., "Google" → "Alphabet Inc.")
+ * - Standardize entity types to controlled vocabulary
+ * - Extract structured triples from natural language statements
+ * - Map evidence spans to normalized forms
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.77.0";
 import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";

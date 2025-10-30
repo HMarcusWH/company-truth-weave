@@ -1,3 +1,32 @@
+/**
+ * Arbiter Agent Edge Function
+ * 
+ * Purpose: Apply policy gates and compliance checks before data storage.
+ * 
+ * Input:
+ * - facts: Validated facts from critic-agent
+ * - entities: Extracted entities from resolver-agent
+ * - environment: Target environment
+ * 
+ * Output:
+ * - decision: ALLOW | BLOCK | WARN
+ * - reasons: Explanation for the decision
+ * - pii_detected: Personal identifiable information found (SSN, credit cards, etc.)
+ * - missing_citations: Facts without required evidence
+ * - disclosures: Compliance notices to present to users
+ * 
+ * Policy checks:
+ * - PII detection: Flag SSN, credit cards, phone numbers, medical records
+ * - IP protection: Detect confidential/proprietary information
+ * - Citation requirements: Enforce evidence attribution
+ * - Compliance disclosures: Generate required notices
+ * 
+ * Decision logic:
+ * - ALLOW: All checks passed, safe to store data
+ * - BLOCK: Critical policy violation, reject entire batch
+ * - WARN: Non-critical issues, store with warning flags
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.77.0";
 import { callAI, parseAIResponse } from "../_shared/ai-caller.ts";
