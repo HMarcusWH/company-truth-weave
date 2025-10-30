@@ -109,10 +109,21 @@ serve(async (req) => {
 
     const runId = runData.run_id;
 
-    // Step 5: Call AI using model-agnostic caller with deterministic settings
-    const modelName = agentData.preferred_model_family.includes('/') 
-      ? agentData.preferred_model_family 
-      : `google/${agentData.preferred_model_family}`;
+    // Step 5: Fetch API version from model config
+    const { data: modelConfig } = await supabase
+      .from('model_configurations')
+      .select('api_version')
+      .eq('model_family_code', agentData.preferred_model_family)
+      .single();
+    
+    const apiVersion = modelConfig?.api_version || 'chat_completions';
+
+    // Step 6: Call AI using model-agnostic caller with deterministic settings
+    const modelName = apiVersion === 'responses'
+      ? agentData.preferred_model_family
+      : agentData.preferred_model_family.includes('/') 
+        ? agentData.preferred_model_family 
+        : `google/${agentData.preferred_model_family}`;
 
     const aiStartTime = Date.now();
     const aiResponse = await callAI(supabaseUrl, supabaseKey, {
@@ -205,7 +216,7 @@ serve(async (req) => {
       );
     }
 
-    const aiData = await parseAIResponse(aiResponse);
+    const aiData = await parseAIResponse(aiResponse, apiVersion);
     const aiLatency = Date.now() - aiStartTime;
 
     // Step 6: Parse AI response

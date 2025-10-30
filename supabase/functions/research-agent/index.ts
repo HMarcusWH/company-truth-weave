@@ -104,10 +104,21 @@ serve(async (req) => {
 
 Use the extract_entities function to return structured data.`;
 
-    // Step 4: Call AI using model-agnostic caller
-    const modelName = agent.preferred_model_family.includes('/') 
-      ? agent.preferred_model_family 
-      : `google/${agent.preferred_model_family}`;
+    // Step 4: Fetch API version from model config
+    const { data: modelConfig } = await supabase
+      .from('model_configurations')
+      .select('api_version')
+      .eq('model_family_code', agent.preferred_model_family)
+      .single();
+    
+    const apiVersion = modelConfig?.api_version || 'chat_completions';
+
+    // Step 5: Call AI using model-agnostic caller
+    const modelName = apiVersion === 'responses' 
+      ? agent.preferred_model_family
+      : agent.preferred_model_family.includes('/') 
+        ? agent.preferred_model_family 
+        : `google/${agent.preferred_model_family}`;
 
     const aiResponse = await callAI(supabaseUrl, supabaseServiceKey, {
       model: modelName,
@@ -183,7 +194,7 @@ Use the extract_entities function to return structured data.`;
       );
     }
 
-    const aiData = await parseAIResponse(aiResponse);
+    const aiData = await parseAIResponse(aiResponse, apiVersion);
     const endTime = Date.now();
     const latencyMs = endTime - startTime;
 

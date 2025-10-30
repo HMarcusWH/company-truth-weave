@@ -513,6 +513,7 @@ export type Database = {
       model_configurations: {
         Row: {
           api_endpoint: string
+          api_version: string
           config_id: string
           created_at: string | null
           max_output_tokens_param: string | null
@@ -524,6 +525,7 @@ export type Database = {
         }
         Insert: {
           api_endpoint: string
+          api_version?: string
           config_id?: string
           created_at?: string | null
           max_output_tokens_param?: string | null
@@ -535,6 +537,7 @@ export type Database = {
         }
         Update: {
           api_endpoint?: string
+          api_version?: string
           config_id?: string
           created_at?: string | null
           max_output_tokens_param?: string | null
