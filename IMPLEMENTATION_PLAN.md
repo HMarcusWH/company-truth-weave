@@ -101,40 +101,39 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 - Check session on protected pages; redirect to /auth if not authenticated
 - Use `supabase.auth.onAuthStateChange` to track session state
 
-## Phase 3: Edge Functions for AI Agents (Priority: HIGH) ⏳ TODO
+## Phase 3: Edge Functions for AI Agents (Priority: HIGH) ✅ COMPLETE
 
-**Reference:** Detailed OpenAI API patterns in `docs/OPENAI_INTEGRATION_GUIDE.md`
+**Reference:** Detailed AI integration patterns in `docs/AI_MODEL_INTEGRATION.md` (primary guide)
 
 ### 3.1 AI Model Selection Strategy
 
-**Lovable AI vs OpenAI Direct:**
-- **Default:** Use Lovable AI (`google/gemini-2.5-flash`) for most agents - pre-configured, no API key needed
-- **Consider OpenAI Direct** for:
-  - Long context needs (>200K tokens) → Use `gpt-4.1-mini` (1M token context)
-  - Highest quality embeddings → Use `text-embedding-3-large` (3072 dimensions)
-  - Cost optimization for simple tasks → Use `gpt-5-nano`
+**Current Architecture:**
+- ✅ **Default:** Lovable AI (`google/gemini-2.5-flash`) for all agents
+- ✅ **Model-Agnostic Caller:** `supabase/functions/_shared/ai-caller.ts` abstracts API differences
+- ✅ **Dynamic Configuration:** Models stored in `model_configurations` table
+- ✅ **Automatic Parameter Mapping:** Handles Chat Completions vs Responses API differences
 
-**Recommended Model Mapping:**
-- `research-agent`: `gpt-4.1-mini` (long documents) OR Lovable AI `google/gemini-2.5-flash`
-- `resolver-agent`: `gpt-5-nano` (simple deduplication)
-- `writer-agent`: `gpt-5-mini` (structured outputs)
-- `critic-agent`: `gpt-5-mini` (reasoning for QA)
-- `arbiter-agent`: `gpt-5-nano` (rule application)
-- `embedding-agent`: `text-embedding-3-large` (best quality vectors)
+**Current Agent Model Mappings:**
+- `research-agent`: `google/gemini-2.5-flash` (balanced speed + accuracy)
+- `resolver-agent`: `google/gemini-2.5-flash` (entity normalization)
+- `critic-agent`: `google/gemini-2.5-flash` (validation reasoning)
+- `arbiter-agent`: `google/gemini-2.5-flash` (policy application)
+- `coordinator`: N/A (orchestration only)
 
-**CRITICAL: GPT-5+ Parameter Changes:**
-- Use `max_completion_tokens` (NOT `max_tokens`)
-- Do NOT include `temperature` parameter (defaults to 1.0)
-- See OPENAI_INTEGRATION_GUIDE.md Section 1
+**CRITICAL Implementation Notes:**
+- ✅ Parameters (`temperature`, `seed`) conditionally included based on `model_configurations.supports_*`
+- ✅ OpenAI Responses API models (e.g., `gpt-5-mini`) correctly omit unsupported parameters
+- ✅ All function calling schemas use standardized format across APIs
+- See AI_MODEL_INTEGRATION.md for full details
 
 ### 3.2 Core Agent Functions
 
 **Implementation Pattern:** Use OpenAI Function Calling for structured outputs (OPENAI_INTEGRATION_GUIDE.md Section 3)
 
-**Function: `research-agent`**
+**Function: `research-agent`** ✅ DEPLOYED
 - **Purpose:** Extract entities, relationships, facts from documents
-- **Input:** `{ document_url, document_text, company_name }`
-- **Model:** `gpt-4.1-mini` (1M context) OR Lovable AI `google/gemini-2.5-flash`
+- **Input:** `{ documentText, documentId, environment }`
+- **Model:** `google/gemini-2.5-flash` (Lovable AI)
 - **Tool Use:** Function calling with strict schema:
   ```typescript
   {
@@ -147,10 +146,10 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 - **Security:** Public function (verify_jwt = false) with rate limiting
 - **Error Handling:** Exponential backoff for rate limits (OPENAI_INTEGRATION_GUIDE.md Section 9)
 
-**Function: `resolver-agent`**
+**Function: `resolver-agent`** ✅ DEPLOYED
 - **Purpose:** Deduplicate/merge companies against existing entities
-- **Input:** `{ candidate_entities, identifiers[] }`
-- **Model:** `gpt-5-nano` (fast, simple logic)
+- **Input:** `{ entities, facts, documentId, environment }`
+- **Model:** `google/gemini-2.5-flash` (Lovable AI)
 - **Process:**
   1. Check LEI/VAT/registry IDs first (exact match)
   2. If no match, fuzzy search on legal_name using pg_trgm
@@ -158,20 +157,16 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 - **Output:** `{ entity_id, match_confidence, is_new }`
 - **Calls:** `upsert_entity_and_children()` stored proc if new entity needed
 
-**Function: `writer-agent`**
-- **Purpose:** Safe database writes via controlled entry point
-- **Input:** `{ entity_data, document_data, fact_data }`
-- **Model:** `gpt-5-mini` (structured JSON generation)
-- **Authorization:** Requires JWT with 'admin' or 'agent_writer' role
-- **Pattern:** Use function calling to generate validated procedure calls (OPENAI_INTEGRATION_GUIDE.md Section 3)
-- **Calls:** Database insert/update via Supabase client (NOT raw SQL)
-- **Logging:** All operations logged to `ingestion_runs` table
-- **Error handling:** Return detailed errors; never expose raw SQL
+**Function: `writer-agent`** ⏳ NOT NEEDED
+- **Replaced By:** Coordinator handles database writes directly via Supabase client
+- **Rationale:** No need for separate write agent - coordinator already has secure write path
+- **Security:** RLS policies + JWT validation provide sufficient protection
+- **Audit:** All writes logged to `runs` and `node_runs` tables
 
-**Function: `critic-agent`**
+**Function: `critic-agent`** ✅ DEPLOYED
 - **Purpose:** QA validation - contradiction detection, citation verification
-- **Input:** `{ fact_id }`
-- **Model:** `gpt-5-mini` (reasoning for quality checks)
+- **Input:** `{ normalizedFacts, documentId, environment }`
+- **Model:** `google/gemini-2.5-flash` (Lovable AI)
 - **Tool Use:** Function calling for structured validation output:
   ```typescript
   {
@@ -189,11 +184,11 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 - **Output:** Validation result stored in `validation_results` table
 - **Pattern:** See OPENAI_INTEGRATION_GUIDE.md Section 3
 
-**Function: `arbiter-agent`**
-- **Purpose:** Policy & safety gate (ALLOW/QUARANTINE/BLOCK)
-- **Input:** `{ validation_results }`
-- **Model:** `gpt-5-nano` (simple rule application)
-- **Moderation:** Use OpenAI Moderation API to detect harmful content/PII (OPENAI_INTEGRATION_GUIDE.md Section 8)
+**Function: `arbiter-agent`** ✅ DEPLOYED
+- **Purpose:** Policy & safety gate (ALLOW/WARN/BLOCK)
+- **Input:** `{ entities, facts, criticResult, documentId, environment }`
+- **Model:** `google/gemini-2.5-flash` (Lovable AI)
+- **Moderation:** LLM-based PII detection (regex patterns + AI analysis)
 - **Rules:**
   - BLOCK if contradiction detected
   - BLOCK if missing required citations
@@ -202,40 +197,35 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 - **Action:** Update `facts.status` to 'verified', 'quarantined', or 'rejected'
 - **Output:** `{ decision, reason, affected_fact_ids }`
 
-**Function: `embedding-agent`**
+**Function: `embedding-agent`** ⏳ TODO
 - **Purpose:** Generate vector embeddings for document chunks
 - **Input:** `{ document_id, document_text }`
-- **Model:** `text-embedding-3-large` (3072 dims, best quality) OR `text-embedding-3-small` (1536 dims, faster)
-- **Process:**
-  1. Split document into ~500 token chunks
-  2. Batch embed chunks (max 8191 tokens per chunk)
-  3. Store embeddings in `documents.embedding` column (pgvector)
-  4. Track model version
-- **Output:** `{ embedding_count, model_version }`
-- **Pattern:** See OPENAI_INTEGRATION_GUIDE.md Section 7 for chunking strategy
-- **Cost:** text-embedding-3-large is $0.13/1M tokens (as of 2025)
+- **Planned Model:** Lovable AI embedding model OR `text-embedding-3-large`
+- **Status:** Not yet implemented - vector search planned for Phase 5
 
-### 3.3 Coordinator Function (TypeScript Multi-Agent Orchestration)
-
-**Note:** OpenAI Agents SDK is Python-only; we implement custom orchestration in TypeScript  
-**Reference:** OPENAI_INTEGRATION_GUIDE.md Section 6 for sequential agent pattern
+### 3.3 Coordinator Function (TypeScript Multi-Agent Orchestration) ✅ DEPLOYED
 
 **Function: `coordinator`**
-- **Purpose:** Orchestrate research → resolve → write → embed → critic → arbiter workflow
-- **Input:** `{ company_name, document_url }`
-- **Implementation Pattern:**
+- **Purpose:** Orchestrate research → resolver → critic → arbiter → storage workflow
+- **Input:** `{ documentText, documentId }`
+- **Current Implementation:**
   ```typescript
-  // Sequential agent execution with error handling
+  // Sequential agent execution with exponential backoff
   1. research-agent → Extract entities/facts from document
-  2. resolver-agent → Deduplicate entities
-  3. writer-agent → Store via safe write path
-  4. embedding-agent → Generate vectors
-  5. critic-agent → Validate facts
-  6. arbiter-agent → Apply policy gates
-  7. Log complete workflow to ingestion_runs
+  2. resolver-agent → Normalize entities to canonical schema
+  3. Store entities to database (non-sensitive metadata)
+  4. critic-agent → Validate facts for contradictions
+  5. arbiter-agent → Apply policy gates (PII, IP, compliance)
+  6. Store facts ONLY IF arbiter decision = 'ALLOW' (zero-trust write)
+  7. Update run record with status + metrics
   ```
-- **Output:** `{ ingestion_run_id, entity_ids, facts_approved, facts_quarantined }`
-- **Error Handling:** Rollback on critical failures; log partial successes
+- **Features:**
+  - ✅ Exponential backoff retry logic (3 retries, 1s/2s/4s delays)
+  - ✅ Budget enforcement (max 5 agent calls, 60s latency)
+  - ✅ Catastrophic error handling (always updates run status)
+  - ✅ In-memory validation (no database reads during validation)
+- **Output:** `{ runId, status, entitiesStored, factsStored, arbiterDecision }`
+- **Error Handling:** Partial success tracking; run marked as 'partial' if some steps fail
 
 ### 3.4 Edge Function Configuration
 **supabase/config.toml updates:**

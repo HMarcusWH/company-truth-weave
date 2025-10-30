@@ -69,8 +69,9 @@ This platform uses a **multi-agent architecture** with PromptOps governance to t
 
 ### **Technical References**
 - **[PromptOps Guide](./docs/PROMPTOPS_GUIDE.md)** - Prompt versioning, A/B testing, governance
-- **[OpenAI Integration](./docs/OPENAI_INTEGRATION_GUIDE.md)** - AI model configuration and best practices
-- **[Third-Party Review Response](./THIRD_PARTY_REVIEW.md)** - Audit feedback and resolution details
+- **[AI Model Integration](./docs/AI_MODEL_INTEGRATION.md)** - Lovable AI configuration and best practices (primary guide)
+- **[OpenAI Integration](./docs/OPENAI_INTEGRATION_GUIDE.md)** - Legacy OpenAI API documentation (deprecated)
+- **[Self-Audit 2025-10-30](./SELF_AUDIT_2025_10_30.md)** - Internal audit findings and resolution details
 
 ## Quick Start
 
@@ -207,9 +208,10 @@ const arbiter = await supabase.functions.invoke('arbiter-agent', {
 ## Technology Stack
 
 - **Frontend**: React, TypeScript, Tailwind CSS, shadcn-ui
-- **Backend**: Supabase (Postgres + Edge Functions)
-- **AI**: Lovable AI (GPT-5, Gemini 2.5)
+- **Backend**: Supabase (Postgres + Edge Functions via Lovable Cloud)
+- **AI**: **Lovable AI** (default: `google/gemini-2.5-flash`) with support for GPT-5, Gemini 2.5 Pro
 - **Build**: Vite
+- **Orchestration**: Model-agnostic AI caller with automatic parameter mapping
 
 ## Environment Variables
 
