@@ -47,7 +47,7 @@ export default function AddDocumentForm({ onUploaded }: Props) {
   const { toast } = useToast();
   const [entities, setEntities] = React.useState<EntityLite[]>([]);
   const [entityId, setEntityId] = React.useState<string>("");
-  const [docType, setDocType] = React.useState<"press_release"|"filing"|"financial_report"|"article"|"other">("press_release");
+  const [docType, setDocType] = React.useState<string>("press_release");
   const [title, setTitle] = React.useState("");
   const [publishedDate, setPublishedDate] = React.useState<string>("");
   const [fullText, setFullText] = React.useState("");
@@ -83,7 +83,7 @@ export default function AddDocumentForm({ onUploaded }: Props) {
         .insert([{
           entity_id: entityId,
           entity_name: ent?.legal_name ?? null,
-          doc_type: docType,
+          doc_type: docType as any,
           title: title.trim(),
           full_text: fullText,
           content_preview: fullText.slice(0, 280),

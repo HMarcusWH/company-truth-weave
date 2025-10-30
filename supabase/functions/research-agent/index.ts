@@ -165,7 +165,7 @@ Use the extract_entities function to return structured data.`;
                   type: 'object',
                   properties: {
                     name: { type: 'string' },
-                    entity_type: { type: 'string', enum: ['company', 'person', 'product', 'location', 'other'] },
+                    entity_type: { type: 'string', enum: ['company', 'person', 'product', 'location', 'event'] },
                     aliases: { type: 'array', items: { type: 'string' } }
                   },
                   required: ['name', 'entity_type']

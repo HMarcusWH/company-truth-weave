@@ -59,6 +59,11 @@ function transformNormalizedFacts(facts: any[] = [], documentId: string) {
       const object = triple.object ?? derived.object ?? derived.value ?? null;
 
       if (!subject || !predicate || !object) {
+        console.warn('Fact filtered - missing triple components:', { 
+          subject: !!subject, predicate: !!predicate, object: !!object,
+          fact_structure: Object.keys(fact),
+          derived_keys: Object.keys(derived)
+        });
         return null;
       }
 
