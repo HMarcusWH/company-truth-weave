@@ -400,13 +400,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "facts_evidence_doc_id_fkey"
-            columns: ["evidence_doc_id"]
-            isOneToOne: false
-            referencedRelation: "documents"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "fk_facts_evidence_doc"
             columns: ["evidence_doc_id"]
             isOneToOne: false
