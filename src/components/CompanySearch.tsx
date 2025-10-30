@@ -11,14 +11,16 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, Building2, MapPin, Link2, Globe, Calendar, CheckCircle2 } from "lucide-react";
+import { Search, Building2, MapPin, Link2, Globe, Calendar, CheckCircle2, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/use-toast";
+import CreateCompanyForm from "@/components/CreateCompanyForm";
 
 // Normalized company shape for UI display
 type Company = {
@@ -38,10 +40,9 @@ export const CompanySearch = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
+  const loadCompanies = async () => {
       const q = searchQuery.trim();
       let query = (supabase as any)
         .from('entities')
@@ -58,7 +59,6 @@ export const CompanySearch = () => {
         toast({ title: 'Failed to load companies', description: error.message } as any);
         return;
       }
-      if (cancelled) return;
 
       const mapped: Company[] = (data ?? []).map((row: any) => ({
         id: row.id,
@@ -76,8 +76,9 @@ export const CompanySearch = () => {
       setCompanies(mapped);
     };
 
-    const t = setTimeout(load, 250);
-    return () => { cancelled = true; clearTimeout(t); };
+  useEffect(() => {
+    const t = setTimeout(loadCompanies, 250);
+    return () => { clearTimeout(t); };
   }, [searchQuery]);
 
   const filteredCompanies = companies;
@@ -87,14 +88,20 @@ export const CompanySearch = () => {
       {/* Search Panel */}
       <div className="space-y-4">
         <Card className="p-6 shadow-sm">
-          <div className="relative">
-            <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search companies by name, ID, or domain..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-11"
-            />
+          <div className="flex items-center gap-3 mb-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search companies by name, ID, or domain..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 h-11"
+              />
+            </div>
+            <Button onClick={() => setShowCreateDialog(true)} size="default">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Company
+            </Button>
           </div>
         </Card>
 
@@ -263,6 +270,19 @@ export const CompanySearch = () => {
           </Card>
         )}
       </div>
+
+      {/* Create Company Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add Company</DialogTitle>
+          </DialogHeader>
+          <CreateCompanyForm onCreated={() => {
+            setShowCreateDialog(false);
+            loadCompanies();
+          }} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

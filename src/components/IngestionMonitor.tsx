@@ -230,7 +230,17 @@ export const IngestionMonitor = () => {
                 </div>
                 <div>
                   <span className="text-muted-foreground">Validation</span>
-                  <p className="font-medium capitalize">{run.validation}</p>
+                  <Badge className={
+                    run.validation === 'pass' ? 'bg-success text-success-foreground' :
+                    run.validation === 'warn' ? 'bg-warning text-warning-foreground' :
+                    run.validation === 'fail' ? 'bg-destructive text-destructive-foreground' :
+                    'bg-muted text-muted-foreground'
+                  }>
+                    {run.validation === 'pass' ? 'ALLOWED' :
+                     run.validation === 'warn' ? 'WARNING' :
+                     run.validation === 'fail' ? 'BLOCKED' :
+                     'PENDING'}
+                  </Badge>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Latency</span>

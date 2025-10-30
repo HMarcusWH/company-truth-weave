@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Download, ExternalLink, Calendar, Building2, Tag } from "lucide-react";
+import { FileText, Download, ExternalLink, Calendar, Building2, Tag, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/use-toast";
+import AddDocumentForm from "@/components/AddDocumentForm";
 
 // Document type used in UI
 type Doc = {
@@ -24,10 +26,9 @@ export const DocumentLibrary = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [docs, setDocs] = useState<Doc[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<Doc | null>(null);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
+  const loadDocuments = async () => {
       const { data, error } = await (supabase as any)
         .from('documents')
         .select('id, title, doc_type, published_date, source_url, full_text, confidence, entity_name')
@@ -37,7 +38,6 @@ export const DocumentLibrary = () => {
         toast({ title: 'Failed to load documents', description: error.message } as any);
         return;
       }
-      if (cancelled) return;
       const mapped: Doc[] = (data ?? []).map((d: any) => ({
         id: d.id,
         title: d.title,
@@ -50,8 +50,9 @@ export const DocumentLibrary = () => {
       }));
       setDocs(mapped);
     };
-    load();
-    return () => { cancelled = true; };
+
+  useEffect(() => {
+    loadDocuments();
   }, []);
 
   const filteredDocs = useMemo(() =>
@@ -74,11 +75,18 @@ export const DocumentLibrary = () => {
       {/* Document List */}
       <div className="space-y-4">
         <Card className="p-4">
-          <Input
-            placeholder="Search documents..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+          <div className="flex items-center gap-3 mb-3">
+            <Input
+              placeholder="Search documents..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1"
+            />
+            <Button onClick={() => setShowUploadDialog(true)} size="default">
+              <Plus className="h-4 w-4 mr-2" />
+              Upload Document
+            </Button>
+          </div>
         </Card>
 
         <div className="space-y-2">
@@ -191,6 +199,19 @@ export const DocumentLibrary = () => {
           </Card>
         )}
       </div>
+
+      {/* Upload Document Dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Upload & Process Document</DialogTitle>
+          </DialogHeader>
+          <AddDocumentForm onUploaded={() => {
+            setShowUploadDialog(false);
+            loadDocuments();
+          }} />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
