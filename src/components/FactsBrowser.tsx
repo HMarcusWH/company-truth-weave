@@ -65,15 +65,12 @@ export const FactsBrowser = () => {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "verified":
-      case "admitted":
         return <CheckCircle2 className="h-4 w-4 text-success" />;
       case "pending":
         return <Clock className="h-4 w-4 text-warning" />;
       case "disputed":
-      case "quarantined":
         return <AlertTriangle className="h-4 w-4 text-warning" />;
       case "superseded":
-      case "retracted":
         return <XCircle className="h-4 w-4 text-destructive" />;
       default:
         return <Database className="h-4 w-4 text-muted-foreground" />;
@@ -83,16 +80,13 @@ export const FactsBrowser = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "verified":
-      case "admitted":
         return "bg-success text-success-foreground";
       case "pending":
-        return "bg-muted text-muted-foreground";
+        return "bg-yellow-500/20 text-yellow-700 dark:text-yellow-300";
       case "disputed":
-      case "quarantined":
         return "bg-warning text-warning-foreground";
       case "superseded":
-      case "retracted":
-        return "bg-destructive text-destructive-foreground";
+        return "bg-muted text-muted-foreground";
       default:
         return "bg-muted text-muted-foreground";
     }

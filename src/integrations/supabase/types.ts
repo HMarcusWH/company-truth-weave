@@ -298,6 +298,13 @@ export type Database = {
             referencedRelation: "entities"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "fk_documents_entity"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
         ]
       }
       entities: {
@@ -394,6 +401,13 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "facts_evidence_doc_id_fkey"
+            columns: ["evidence_doc_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_facts_evidence_doc"
             columns: ["evidence_doc_id"]
             isOneToOne: false
             referencedRelation: "documents"

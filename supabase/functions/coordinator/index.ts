@@ -342,6 +342,7 @@ serve(async (req) => {
     // Step 8: Store facts (only if arbiter approved)
     let factsStored = 0;
     
+    console.log('Arbiter decision:', arbiterResult?.policy?.decision);
     if (arbiterResult?.policy?.decision === 'ALLOW' && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
       const factsToStore = resolverResult.normalized.normalized_facts;
       const factRows = transformNormalizedFacts(factsToStore, documentId);
@@ -364,6 +365,10 @@ serve(async (req) => {
       }
     } else if (arbiterResult?.policy?.decision === 'BLOCK') {
       console.log('Facts blocked by arbiter - not storing');
+    } else if (arbiterResult?.policy?.decision === 'WARN') {
+      console.log('Facts flagged with warning by arbiter - not storing');
+    } else {
+      console.log('No arbiter decision or facts not ready for storage');
     }
 
     // Step 8: Determine workflow status
@@ -429,27 +434,39 @@ serve(async (req) => {
   } catch (error: any) {
     console.error('Unexpected error in coordinator:', error);
     
-    // Try to mark run as failed if we have a runId
+    // CRITICAL: Always mark run as failed on catastrophic error
     try {
       const supabaseUrl = Deno.env.get('SUPABASE_URL');
       const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       if (supabaseUrl && supabaseKey) {
         const supabase = createClient(supabaseUrl, supabaseKey);
-        // Only update runs that are still in 'running' status
-        await supabase
+        
+        // Update the most recent running run
+        const { data: runningRuns } = await supabase
           .from('runs')
-          .update({
-            status_code: 'failed',
-            ended_at: new Date().toISOString(),
-            metrics_json: {
-              error_message: error.message || 'Internal server error',
-              error_stage: 'coordinator-initialization',
-              failed_at: new Date().toISOString()
-            }
-          })
+          .select('run_id')
           .eq('status_code', 'running')
           .order('started_at', { ascending: false })
           .limit(1);
+        
+        if (runningRuns && runningRuns.length > 0) {
+          await supabase
+            .from('runs')
+            .update({
+              status_code: 'failed',
+              ended_at: new Date().toISOString(),
+              metrics_json: {
+                error_message: error.message || 'Internal server error',
+                error_stack: error.stack,
+                error_stage: 'coordinator-fatal',
+                failed_at: new Date().toISOString(),
+                total_latency_ms: Date.now() - startTime
+              }
+            })
+            .eq('run_id', runningRuns[0].run_id);
+          
+          console.log(`Marked run ${runningRuns[0].run_id} as failed`);
+        }
       }
     } catch (updateError) {
       console.error('Failed to update run status on error:', updateError);

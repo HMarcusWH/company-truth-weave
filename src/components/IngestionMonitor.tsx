@@ -27,14 +27,15 @@ export const IngestionMonitor = () => {
     let cancelled = false;
     const load = async () => {
       // counts
-      const [entitiesCount, documentsCount, factsCount, lastRunData] = await Promise.all([
+      const [entitiesCount, documentsCount, factsCount, agentsCount, lastRunData] = await Promise.all([
         supabase.from('entities').select('*', { count: 'exact', head: true }),
         supabase.from('documents').select('*', { count: 'exact', head: true }),
         supabase.from('facts').select('*', { count: 'exact', head: true }).eq('status', 'verified'),
+        supabase.from('agent_definitions').select('*', { count: 'exact', head: true }),
         supabase.from('runs').select('created_at').order('created_at', { ascending: false }).limit(1).single(),
       ]);
-      if (entitiesCount.error || documentsCount.error || factsCount.error) {
-        const err = entitiesCount.error || documentsCount.error || factsCount.error;
+      if (entitiesCount.error || documentsCount.error || factsCount.error || agentsCount.error) {
+        const err = entitiesCount.error || documentsCount.error || factsCount.error || agentsCount.error;
         toast({ title: 'Failed to load stats', description: err?.message || '' });
       }
       if (cancelled) return;
@@ -43,6 +44,7 @@ export const IngestionMonitor = () => {
         total_entities: entitiesCount.count ?? 0,
         total_documents: documentsCount.count ?? 0,
         total_facts: factsCount.count ?? 0,
+        active_agents: agentsCount.count ?? 0,
         last_run: lastRunData.data?.created_at || undefined,
       }));
 

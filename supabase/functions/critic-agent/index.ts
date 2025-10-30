@@ -221,9 +221,7 @@ serve(async (req) => {
         }
       }],
       tool_choice: { type: 'function', function: { name: 'validate_facts' } },
-      temperature: 0.1,
-      reasoning_effort: agentData.reasoning_effort || 'low',
-      seed: 42
+      reasoning_effort: agentData.reasoning_effort || 'low'
     });
 
     if (!aiResponse.ok) {
