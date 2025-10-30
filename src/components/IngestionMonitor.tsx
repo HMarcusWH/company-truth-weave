@@ -55,16 +55,30 @@ export const IngestionMonitor = () => {
       if (runsErr) {
         toast({ title: 'Failed to load runs', description: runsErr.message });
       } else if (!cancelled) {
-        setRecentRuns((runs ?? []).map((r: any) => ({
-          id: r.run_id,
-          agent: `Coordinator (${r.env_code})`,
-          task: 'Multi-agent pipeline',
-          status: r.status_code,
-          started: r.started_at,
-          rows_ingested: r.metrics_json?.facts_stored || 0,
-          validation: r.metrics_json?.arbiter_decision === 'APPROVED' ? 'pass' : 'fail',
-          latency_ms: r.metrics_json?.total_latency_ms || 0,
-        })));
+        setRecentRuns((runs ?? []).map((r: any) => {
+          const decision = typeof r.metrics_json?.arbiter_decision === 'string'
+            ? r.metrics_json.arbiter_decision.toUpperCase()
+            : undefined;
+
+          const validation = decision === 'ALLOW'
+            ? 'pass'
+            : decision === 'WARN'
+              ? 'warn'
+              : decision === 'BLOCK'
+                ? 'fail'
+                : 'pending';
+
+          return {
+            id: r.run_id,
+            agent: `Coordinator (${r.env_code})`,
+            task: 'Multi-agent pipeline',
+            status: r.status_code,
+            started: r.started_at,
+            rows_ingested: r.metrics_json?.facts_stored || 0,
+            validation,
+            latency_ms: r.metrics_json?.total_latency_ms || 0,
+          };
+        }));
       }
 
       // validation results

@@ -12,6 +12,8 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  let runId: string | null = null;
+
   try {
     const { documentText, documentId, environment = 'dev' } = await req.json();
     
@@ -78,7 +80,7 @@ serve(async (req) => {
       .from('runs')
       .insert({
         env_code: environment,
-        status_code: 'success',
+        status_code: 'running',
         started_at: new Date().toISOString()
       })
       .select()
@@ -91,6 +93,8 @@ serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    runId = run.run_id;
 
     const startTime = Date.now();
 
@@ -249,61 +253,11 @@ Use the extract_entities function to return structured data.`;
       ]);
     }
 
-    // Step 7: Store extracted entities and facts
-    const storedEntities = [];
-    const storedFacts = [];
-
-    // Store entities
-    for (const entity of extractedData.entities || []) {
-      const { data: storedEntity, error: entityError } = await supabase
-        .from('entities')
-        .insert({
-          name: entity.name,
-          entity_type: entity.entity_type,
-          aliases: entity.aliases || []
-        })
-        .select()
-        .single();
-
-      if (!entityError && storedEntity) {
-        storedEntities.push(storedEntity);
-      }
-    }
-
-    // Store facts
-    for (const fact of extractedData.facts || []) {
-      // Find matching entity if entity_name provided
-      let entityId = null;
-      if (fact.entity_name) {
-        const matchedEntity = storedEntities.find(e => 
-          e.name.toLowerCase() === fact.entity_name.toLowerCase()
-        );
-        entityId = matchedEntity?.entity_id;
-      }
-
-      const { data: storedFact, error: factError } = await supabase
-        .from('facts')
-        .insert({
-          entity_id: entityId,
-          document_id: documentId || null,
-          statement: fact.statement,
-          evidence: fact.evidence,
-          confidence: fact.confidence,
-          status: 'pending'
-        })
-        .select()
-        .single();
-
-      if (!factError && storedFact) {
-        storedFacts.push(storedFact);
-      }
-    }
-
-    // Step 8: Record guardrail results (basic validation)
+    // Step 7: Record guardrail results (basic validation)
     if (nodeRun) {
       const hasEntities = extractedData.entities?.length > 0;
       const hasFacts = extractedData.facts?.length > 0;
-      const validConfidences = extractedData.facts?.every((f: any) => 
+      const validConfidences = extractedData.facts?.every((f: any) =>
         f.confidence >= 0 && f.confidence <= 1
       );
 
@@ -319,16 +273,16 @@ Use the extract_entities function to return structured data.`;
       });
     }
 
-    // Step 9: Update run completion
+    // Step 8: Update run completion
     await supabase
       .from('runs')
-      .update({ 
-        status_code: 'success', 
+      .update({
+        status_code: 'success',
         ended_at: new Date().toISOString(),
         metrics_json: {
           total_latency_ms: latencyMs,
-          entities_stored: storedEntities.length,
-          facts_stored: storedFacts.length
+          entities_extracted: extractedData.entities?.length || 0,
+          facts_extracted: extractedData.facts?.length || 0
         }
       })
       .eq('run_id', run.run_id);
@@ -338,9 +292,11 @@ Use the extract_entities function to return structured data.`;
         success: true,
         run_id: run.run_id,
         node_run_id: nodeRun?.node_run_id,
+        entities: extractedData.entities || [],
+        facts: extractedData.facts || [],
         extracted: {
-          entities: storedEntities.length,
-          facts: storedFacts.length
+          entities: extractedData.entities?.length || 0,
+          facts: extractedData.facts?.length || 0
         },
         latency_ms: latencyMs,
         prompt_version: promptVersion.semver
@@ -350,6 +306,20 @@ Use the extract_entities function to return structured data.`;
 
   } catch (error) {
     console.error('Research agent error:', error);
+
+    if (runId) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+      if (supabaseUrl && supabaseServiceKey) {
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        await supabase
+          .from('runs')
+          .update({ status_code: 'error', ended_at: new Date().toISOString() })
+          .eq('run_id', runId);
+      }
+    }
+
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

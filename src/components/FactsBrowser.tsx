@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Database, ExternalLink, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
+import { Database, ExternalLink, CheckCircle2, AlertTriangle, XCircle, Clock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -64,19 +64,37 @@ export const FactsBrowser = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "admitted": return <CheckCircle2 className="h-4 w-4 text-success" />;
-      case "quarantined": return <AlertTriangle className="h-4 w-4 text-warning" />;
-      case "retracted": return <XCircle className="h-4 w-4 text-destructive" />;
-      default: return <Database className="h-4 w-4" />;
+      case "verified":
+      case "admitted":
+        return <CheckCircle2 className="h-4 w-4 text-success" />;
+      case "pending":
+        return <Clock className="h-4 w-4 text-warning" />;
+      case "disputed":
+      case "quarantined":
+        return <AlertTriangle className="h-4 w-4 text-warning" />;
+      case "superseded":
+      case "retracted":
+        return <XCircle className="h-4 w-4 text-destructive" />;
+      default:
+        return <Database className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "admitted": return "bg-success text-success-foreground";
-      case "quarantined": return "bg-warning text-warning-foreground";
-      case "retracted": return "bg-destructive text-destructive-foreground";
-      default: return "bg-muted text-muted-foreground";
+      case "verified":
+      case "admitted":
+        return "bg-success text-success-foreground";
+      case "pending":
+        return "bg-muted text-muted-foreground";
+      case "disputed":
+      case "quarantined":
+        return "bg-warning text-warning-foreground";
+      case "superseded":
+      case "retracted":
+        return "bg-destructive text-destructive-foreground";
+      default:
+        return "bg-muted text-muted-foreground";
     }
   };
 
