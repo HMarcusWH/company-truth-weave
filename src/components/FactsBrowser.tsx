@@ -29,11 +29,24 @@ export const FactsBrowser = () => {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const { data, error } = await (supabase as any)
+      // Try with explicit FK first
+      let { data, error } = await (supabase as any)
         .from('facts')
-        .select('id, subject, predicate, object, confidence, status, created_at, evidence_text, documents:evidence_doc_id(title, full_text)')
+        .select('id, subject, predicate, object, confidence, status, created_at, evidence_text, documents!fk_facts_evidence_doc(title, full_text)')
         .order('created_at', { ascending: false })
         .limit(100);
+      
+      // Fallback without embed if relationship error occurs
+      if (error && error.message.includes('more than one relationship')) {
+        const fallback = await (supabase as any)
+          .from('facts')
+          .select('id, subject, predicate, object, confidence, status, created_at, evidence_text')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        data = fallback.data;
+        error = fallback.error;
+      }
+      
       if (error) {
         toast({ title: 'Failed to load facts', description: error.message } as any);
         return;
@@ -97,6 +110,11 @@ export const FactsBrowser = () => {
       {/* Facts List */}
       <div className="space-y-4">
         <Card className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-muted-foreground">
+              {filteredFacts.length} fact{filteredFacts.length !== 1 ? 's' : ''}
+            </span>
+          </div>
           <Input
             placeholder="Search facts..."
             value={searchQuery}
@@ -188,13 +206,21 @@ export const FactsBrowser = () => {
                 <div className="space-y-3">
                   <div className="p-3 bg-muted/50 rounded-lg">
                     <span className="text-xs font-medium text-muted-foreground">Source Document</span>
-                    <p className="text-sm font-medium">{selectedFact.evidence_doc ?? '—'}</p>
+                    <p className="text-sm font-medium">
+                      {selectedFact.evidence_doc ?? (
+                        <span className="text-muted-foreground italic">No source document linked</span>
+                      )}
+                    </p>
                   </div>
                   <div className="p-3 bg-accent/20 border border-accent rounded-lg">
                     <span className="text-xs font-medium text-muted-foreground mb-2 block">
                       Citation
                     </span>
-                    <p className="text-sm italic">"{selectedFact.evidence_snippet ?? '—'}"</p>
+                    <p className="text-sm italic">
+                      {selectedFact.evidence_snippet ? `"${selectedFact.evidence_snippet}"` : (
+                        <span className="text-muted-foreground">No citation available</span>
+                      )}
+                    </p>
                   </div>
                 </div>
               </div>
