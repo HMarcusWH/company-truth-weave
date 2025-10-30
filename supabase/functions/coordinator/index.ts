@@ -10,6 +10,53 @@ const MAX_RETRIES = 5;
 const MAX_AGENT_CALLS = 5;
 const MAX_LATENCY_MS = 60000;
 
+const FACT_STATUS_VALUES = new Set(['pending', 'verified', 'disputed', 'superseded']);
+
+function clampConfidence(value: any) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return null;
+  }
+  const bounded = Math.min(Math.max(value, 0), 1);
+  return Math.round(bounded * 100) / 100;
+}
+
+function transformNormalizedFacts(facts: any[] = [], documentId: string) {
+  return facts
+    .map((fact: any) => {
+      const derived = fact?.derived ?? {};
+      const triple = derived?.triple ?? {};
+
+      const subject = triple.subject ?? derived.subject ?? derived.entity ?? null;
+      const predicate = triple.predicate ?? derived.predicate ?? derived.relationship ?? null;
+      const object = triple.object ?? derived.object ?? derived.value ?? null;
+
+      if (!subject || !predicate || !object) {
+        return null;
+      }
+
+      const evidence = derived.evidence ?? {};
+      const evidenceText = evidence.text ?? derived.evidence_text ?? fact.evidence_text ?? fact.normalized_statement ?? fact.original_statement ?? null;
+      const evidenceDocId = evidence.document_id ?? derived.evidence_doc_id ?? derived.document_id ?? documentId;
+      const span = evidence.span ?? derived.evidence_span ?? fact.evidence_span;
+      const confidenceCandidate = clampConfidence(fact.confidence_numeric ?? derived.confidence);
+      const statusCandidate = typeof derived.status === 'string' && FACT_STATUS_VALUES.has(derived.status) ? derived.status : 'verified';
+
+      return {
+        subject,
+        predicate,
+        object,
+        evidence_text: evidenceText ?? null,
+        evidence_doc_id: evidenceDocId ?? documentId,
+        evidence_span_start: typeof span?.start === 'number' ? span.start : null,
+        evidence_span_end: typeof span?.end === 'number' ? span.end : null,
+        confidence: confidenceCandidate ?? 0.8,
+        status: statusCandidate,
+        created_by: null
+      };
+    })
+    .filter((fact): fact is Record<string, unknown> => Boolean(fact));
+}
+
 async function retryWithBackoff(fn: () => Promise<any>, retries = 0): Promise<any> {
   try {
     const response = await fn();
@@ -174,9 +221,13 @@ serve(async (req) => {
       console.log('Step 3: Calling critic-agent...');
       try {
         agentCallCount++;
+        const criticFacts = resolverResult?.normalized?.normalized_facts?.length
+          ? resolverResult.normalized.normalized_facts
+          : (researchResult?.facts || []);
+
         const criticResponse = await retryWithBackoff(() =>
           supabase.functions.invoke('critic-agent', {
-            body: { documentId, environment }
+            body: { documentId, environment, facts: criticFacts }
           })
         );
 
@@ -260,29 +311,23 @@ serve(async (req) => {
     
     if (arbiterResult?.policy?.decision === 'ALLOW' && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
       const factsToStore = resolverResult.normalized.normalized_facts;
-      
-      const { data: insertedFacts, error: factError } = await supabase
-        .from('facts')
-        .insert(factsToStore.map((f: any) => ({
-          subject: f.normalized_statement?.split(' ')[0] || f.original_statement?.split(' ')[0] || 'unknown',
-          predicate: 'states',
-          object: f.normalized_statement || f.original_statement,
-          evidence_text: f.original_statement,
-          evidence_doc_id: documentId,
-          evidence_span_start: f.evidence_span?.start,
-          evidence_span_end: f.evidence_span?.end,
-          confidence: f.confidence_numeric || 0.8,
-          status: 'verified',
-          created_by: null
-        })))
-        .select('id');
-      
-      if (!factError && insertedFacts) {
-        factsStored = insertedFacts.length;
-        console.log(`Stored ${factsStored} facts after arbiter approval`);
-      } else if (factError) {
-        console.error('Error storing facts:', factError);
-        errors.push({ step: 'fact-storage', message: factError.message });
+      const factRows = transformNormalizedFacts(factsToStore, documentId);
+
+      if (factRows.length === 0) {
+        console.log('No well-formed facts available after normalization; skipping insert.');
+      } else {
+        const { data: insertedFacts, error: factError } = await supabase
+          .from('facts')
+          .insert(factRows)
+          .select('id');
+
+        if (!factError && insertedFacts) {
+          factsStored = insertedFacts.length;
+          console.log(`Stored ${factsStored} facts after arbiter approval`);
+        } else if (factError) {
+          console.error('Error storing facts:', factError);
+          errors.push({ step: 'fact-storage', message: factError.message });
+        }
       }
     } else if (arbiterResult?.policy?.decision === 'BLOCK') {
       console.log('Facts blocked by arbiter - not storing');

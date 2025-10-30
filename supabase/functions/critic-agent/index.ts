@@ -15,7 +15,7 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const { documentId, environment = 'dev' } = await req.json();
+    const { documentId, environment = 'dev', facts: providedFacts } = await req.json();
 
     if (!documentId) {
       return new Response(
@@ -73,21 +73,27 @@ serve(async (req) => {
     const promptVersion = bindingData.prompt_versions as any;
     const systemPrompt = promptVersion.content_text;
 
-    // Step 3: Fetch facts for this document
-    const { data: factsData, error: factsError } = await supabase
-      .from('facts')
-      .select('*')
-      .eq('evidence_doc_id', documentId);
+    // Step 3: Determine which facts to validate. Prefer payload, fall back to DB.
+    let factsSource: 'payload' | 'database' = 'payload';
+    let facts = Array.isArray(providedFacts) ? providedFacts : [];
 
-    if (factsError) {
-      console.error('Error fetching facts:', factsError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch facts' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (facts.length === 0) {
+      const { data: factsData, error: factsError } = await supabase
+        .from('facts')
+        .select('*')
+        .eq('evidence_doc_id', documentId);
+
+      if (factsError) {
+        console.error('Error fetching facts:', factsError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to fetch facts' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      facts = factsData || [];
+      factsSource = 'database';
     }
-
-    const facts = factsData || [];
 
     // Step 4: Create run record
     const { data: runData, error: runError } = await supabase
@@ -130,7 +136,7 @@ serve(async (req) => {
       model: modelName,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(facts) }
+        { role: 'user', content: JSON.stringify({ documentId, facts }) }
       ],
       tools: [{
         type: 'function',
@@ -248,7 +254,7 @@ serve(async (req) => {
         prompt_version_id: bindingData.prompt_version_id,
         node_id: 'critic-agent',
         rendered_prompt_text: systemPrompt,
-        input_vars_json: { documentId, factsCount: facts.length },
+        input_vars_json: { documentId, factsCount: facts.length, factsSource },
         outputs_json: validationResult,
         tool_calls_json: [toolCall],
         model_family_code: agentData.preferred_model_family,
@@ -272,7 +278,7 @@ serve(async (req) => {
         {
           node_run_id: nodeRunData.node_run_id,
           role_code: 'user',
-          content_text: JSON.stringify(facts)
+          content_text: JSON.stringify({ documentId, facts })
         },
         {
           node_run_id: nodeRunData.node_run_id,
@@ -325,7 +331,8 @@ serve(async (req) => {
         validation: validationResult,
         metrics: {
           total_latency_ms: totalLatency,
-          facts_validated: facts.length
+          facts_validated: facts.length,
+          facts_source: factsSource
         }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
