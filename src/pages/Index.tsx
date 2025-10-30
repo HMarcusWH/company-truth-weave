@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Search, FileText, Database, Activity, LogOut, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { CompanySearch } from "@/components/CompanySearch";
 import { DocumentLibrary } from "@/components/DocumentLibrary";
@@ -11,7 +12,7 @@ import { IngestionMonitor } from "@/components/IngestionMonitor";
 import { PipelineTest } from "@/components/PipelineTest";
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState("test");
+  const [activeTab, setActiveTab] = useState("search");
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -56,6 +57,20 @@ const Index = () => {
                 <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-sm font-medium text-green-700 dark:text-green-400">System Active</span>
               </div>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <Zap className="h-4 w-4" />
+                    <span className="hidden sm:inline">Test</span>
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Pipeline Test (Dev Tool)</DialogTitle>
+                  </DialogHeader>
+                  <PipelineTest />
+                </DialogContent>
+              </Dialog>
               <Button variant="outline" size="sm" onClick={signOut} className="gap-2">
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">Sign Out</span>
@@ -68,11 +83,7 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-6 py-10">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
-          <TabsList className="inline-flex h-12 w-full max-w-3xl mx-auto">
-            <TabsTrigger value="test" className="flex-1 flex items-center justify-center gap-2 px-6">
-              <Zap className="h-4 w-4" />
-              <span>Test</span>
-            </TabsTrigger>
+          <TabsList className="inline-flex h-12 w-full max-w-2xl mx-auto">
             <TabsTrigger value="search" className="flex-1 flex items-center justify-center gap-2 px-6">
               <Search className="h-4 w-4" />
               <span>Search</span>
@@ -90,10 +101,6 @@ const Index = () => {
               <span>Monitor</span>
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="test" className="space-y-6">
-            <PipelineTest />
-          </TabsContent>
 
           <TabsContent value="search" className="space-y-6">
             <CompanySearch />
