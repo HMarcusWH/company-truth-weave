@@ -120,6 +120,8 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
+        temperature: 0.1, // Deterministic validation
+        seed: 42, // Reproducibility
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: JSON.stringify(facts) }
@@ -128,21 +130,32 @@ serve(async (req) => {
           type: 'function',
           function: {
             name: 'validate_facts',
-            description: 'Validate facts for contradictions, missing citations, and schema errors',
+            description: 'Validate the quality and consistency of extracted facts. Run contradiction tests by grouping facts by (subject, predicate) and flagging when same subject+predicate maps to different objects without qualifiers.',
             parameters: {
               type: 'object',
               properties: {
                 is_valid: { type: 'boolean' },
                 contradictions: {
                   type: 'array',
+                  description: 'Detected contradictions where same subject+predicate maps to different objects',
                   items: {
                     type: 'object',
                     properties: {
-                      fact1_id: { type: 'string' },
-                      fact2_id: { type: 'string' },
-                      reason: { type: 'string' }
+                      subject: { type: 'string', description: 'The entity (e.g., "Acme Inc")' },
+                      predicate: { type: 'string', description: 'The relationship (e.g., "CEO")' },
+                      conflicting_objects: { 
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Different values found (e.g., ["John Doe", "Jane Smith"])'
+                      },
+                      fact_ids: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'IDs of conflicting facts'
+                      },
+                      reason: { type: 'string', description: 'Explanation of the contradiction' }
                     },
-                    required: ['fact1_id', 'fact2_id', 'reason']
+                    required: ['subject', 'predicate', 'conflicting_objects', 'fact_ids', 'reason']
                   }
                 },
                 missing_citations: {

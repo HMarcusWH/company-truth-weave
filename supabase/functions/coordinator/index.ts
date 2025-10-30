@@ -224,74 +224,68 @@ serve(async (req) => {
     // Step 7: Store entities (after resolver, before arbiter)
     let entitiesStored = 0;
     
-    if (resolverResult?.normalized?.normalized_entities) {
+    if (resolverResult?.normalized?.normalized_entities && resolverResult.normalized.normalized_entities.length > 0) {
       const entitiesToStore = resolverResult.normalized.normalized_entities;
       
-      if (entitiesToStore.length > 0) {
-        const { data: insertedEntities, error: entityError } = await supabase
-          .from('entities')
-          .insert(entitiesToStore.map((e: any) => ({
-            legal_name: e.canonical_name || e.original_name,
-            entity_type: e.entity_type,
-            identifiers: e.derived?.identifiers || {},
-            trading_names: e.original_name !== e.canonical_name ? [e.original_name] : [],
-            addresses: e.derived?.addresses || [],
-            relationships: e.derived?.relationships || [],
-            website: e.derived?.website,
-            metadata: { 
-              source: 'coordinator', 
-              document_id: documentId,
-              run_id: runId,
-              original_name: e.original_name
-            }
-          })))
-          .select('id');
-        
-        if (!entityError && insertedEntities) {
-          entitiesStored = insertedEntities.length;
-          console.log(`Stored ${entitiesStored} entities after resolver`);
-        } else if (entityError) {
-          console.error('Error storing entities:', entityError);
-          errors.push({ step: 'entity-storage', message: entityError.message });
-        }
+      const { data: insertedEntities, error: entityError } = await supabase
+        .from('entities')
+        .insert(entitiesToStore.map((e: any) => ({
+          legal_name: e.canonical_name || e.original_name,
+          entity_type: e.entity_type,
+          identifiers: e.derived?.identifiers || {},
+          trading_names: e.original_name !== e.canonical_name ? [e.original_name] : [],
+          addresses: e.derived?.addresses || [],
+          relationships: e.derived?.relationships || [],
+          website: e.derived?.website,
+          metadata: { 
+            source: 'coordinator', 
+            document_id: documentId,
+            run_id: runId,
+            original_name: e.original_name
+          }
+        })))
+        .select('id');
+      
+      if (!entityError && insertedEntities) {
+        entitiesStored = insertedEntities.length;
+        console.log(`Stored ${entitiesStored} entities after resolver`);
+      } else if (entityError) {
+        console.error('Error storing entities:', entityError);
+        errors.push({ step: 'entity-storage', message: entityError.message });
       }
     }
 
     // Step 8: Store facts (only if arbiter approved)
     let factsStored = 0;
     
-    if (arbiterResult?.policy?.decision === 'APPROVED' && resolverResult?.normalized?.normalized_facts) {
+    if (arbiterResult?.policy?.decision === 'ALLOW' && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
       const factsToStore = resolverResult.normalized.normalized_facts;
       
-      if (factsToStore.length > 0) {
-        const { data: insertedFacts, error: factError } = await supabase
-          .from('facts')
-          .insert(factsToStore.map((f: any) => ({
-            subject: f.normalized_statement?.split(' ')[0] || f.original_statement.split(' ')[0],
-            predicate: 'states',
-            object: f.normalized_statement || f.original_statement,
-            evidence_text: f.original_statement,
-            evidence_doc_id: documentId,
-            confidence: f.confidence_numeric || 0.8,
-            status: 'approved',
-            created_by: null,
-            metadata: { 
-              source: 'coordinator',
-              run_id: runId,
-              normalized_by: 'resolver-agent',
-              approved_by: 'arbiter-agent'
-            }
-          })))
-          .select('id');
-        
-        if (!factError && insertedFacts) {
-          factsStored = insertedFacts.length;
-          console.log(`Stored ${factsStored} facts after arbiter approval`);
-        } else if (factError) {
-          console.error('Error storing facts:', factError);
-          errors.push({ step: 'fact-storage', message: factError.message });
-        }
+      const { data: insertedFacts, error: factError } = await supabase
+        .from('facts')
+        .insert(factsToStore.map((f: any) => ({
+          subject: f.normalized_statement?.split(' ')[0] || f.original_statement?.split(' ')[0] || 'unknown',
+          predicate: 'states',
+          object: f.normalized_statement || f.original_statement,
+          evidence_text: f.original_statement,
+          evidence_doc_id: documentId,
+          evidence_span_start: f.evidence_span?.start,
+          evidence_span_end: f.evidence_span?.end,
+          confidence: f.confidence_numeric || 0.8,
+          status: 'verified',
+          created_by: null
+        })))
+        .select('id');
+      
+      if (!factError && insertedFacts) {
+        factsStored = insertedFacts.length;
+        console.log(`Stored ${factsStored} facts after arbiter approval`);
+      } else if (factError) {
+        console.error('Error storing facts:', factError);
+        errors.push({ step: 'fact-storage', message: factError.message });
       }
+    } else if (arbiterResult?.policy?.decision === 'BLOCK') {
+      console.log('Facts blocked by arbiter - not storing');
     }
 
     // Step 8: Determine workflow status
@@ -340,8 +334,8 @@ serve(async (req) => {
         facts_extracted: researchResult?.facts?.length || 0,
         entities_stored: entitiesStored,
         facts_stored: factsStored,
-        facts_approved: arbiterResult?.policy?.decision === 'APPROVED' ? factsStored : 0,
-        blocked_by_arbiter: arbiterResult?.policy?.decision === 'BLOCKED' ? (researchResult?.facts?.length || 0) : 0,
+        facts_approved: arbiterResult?.policy?.decision === 'ALLOW' ? factsStored : 0,
+        blocked_by_arbiter: arbiterResult?.policy?.decision === 'BLOCK' ? (researchResult?.facts?.length || 0) : 0,
         agents_executed: [
           { agent_name: 'research-agent', status: researchResult ? 'success' : 'failed' },
           { agent_name: 'resolver-agent', status: resolverResult ? 'success' : 'failed' },

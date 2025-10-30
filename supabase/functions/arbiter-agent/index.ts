@@ -106,6 +106,8 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
+        temperature: 0.1, // Deterministic policy decisions
+        seed: 42, // Reproducibility
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: inputData }

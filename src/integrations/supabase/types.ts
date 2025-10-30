@@ -339,6 +339,8 @@ export type Database = {
           created_at: string
           created_by: string | null
           evidence_doc_id: string | null
+          evidence_span_end: number | null
+          evidence_span_start: number | null
           evidence_text: string | null
           evidence_url: string | null
           id: string
@@ -353,6 +355,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           evidence_doc_id?: string | null
+          evidence_span_end?: number | null
+          evidence_span_start?: number | null
           evidence_text?: string | null
           evidence_url?: string | null
           id?: string
@@ -367,6 +371,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           evidence_doc_id?: string | null
+          evidence_span_end?: number | null
+          evidence_span_start?: number | null
           evidence_text?: string | null
           evidence_url?: string | null
           id?: string

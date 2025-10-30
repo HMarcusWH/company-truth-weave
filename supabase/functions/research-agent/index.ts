@@ -114,6 +114,7 @@ Use the extract_entities function to return structured data.`;
       },
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
+        temperature: 0.7, // Creative extraction
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: documentText }
@@ -145,10 +146,19 @@ Use the extract_entities function to return structured data.`;
                     properties: {
                       statement: { type: 'string' },
                       evidence: { type: 'string' },
+                      evidence_span: {
+                        type: 'object',
+                        description: 'Character offsets in document where evidence was found',
+                        properties: {
+                          start: { type: 'number', description: 'Starting character offset' },
+                          end: { type: 'number', description: 'Ending character offset' }
+                        },
+                        required: ['start', 'end']
+                      },
                       confidence: { type: 'number', minimum: 0, maximum: 1 },
                       entity_name: { type: 'string' }
                     },
-                    required: ['statement', 'evidence', 'confidence']
+                    required: ['statement', 'evidence', 'evidence_span', 'confidence']
                   }
                 }
               },
