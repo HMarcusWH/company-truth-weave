@@ -37,13 +37,13 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
       {/* Header */}
-      <header className="border-b border-border bg-card sticky top-0 z-50">
+      <header className="border-b border-border/40 bg-card/95 backdrop-blur-md sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
+              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
                 <Database className="h-6 w-6 text-primary-foreground" />
               </div>
               <div>
@@ -51,14 +51,14 @@ const Index = () => {
                 <p className="text-xs text-muted-foreground">AI-Powered Digital Twins</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Activity className="h-4 w-4 text-green-500" />
-                <span>System Active</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20">
+                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-sm font-medium text-green-700 dark:text-green-400">System Active</span>
               </div>
-              <Button variant="outline" size="sm" onClick={signOut}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
+              <Button variant="outline" size="sm" onClick={signOut} className="gap-2">
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Sign Out</span>
               </Button>
             </div>
           </div>
@@ -66,28 +66,28 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-6 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-[750px]">
-            <TabsTrigger value="test" className="flex items-center gap-2">
+      <main className="container mx-auto px-6 py-10">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-8">
+          <TabsList className="inline-flex h-12 w-full max-w-3xl mx-auto">
+            <TabsTrigger value="test" className="flex-1 flex items-center justify-center gap-2 px-6">
               <Zap className="h-4 w-4" />
-              <span className="hidden sm:inline">Test</span>
+              <span>Test</span>
             </TabsTrigger>
-            <TabsTrigger value="search" className="flex items-center gap-2">
+            <TabsTrigger value="search" className="flex-1 flex items-center justify-center gap-2 px-6">
               <Search className="h-4 w-4" />
-              <span className="hidden sm:inline">Search</span>
+              <span>Search</span>
             </TabsTrigger>
-            <TabsTrigger value="documents" className="flex items-center gap-2">
+            <TabsTrigger value="documents" className="flex-1 flex items-center justify-center gap-2 px-6">
               <FileText className="h-4 w-4" />
-              <span className="hidden sm:inline">Documents</span>
+              <span>Documents</span>
             </TabsTrigger>
-            <TabsTrigger value="facts" className="flex items-center gap-2">
+            <TabsTrigger value="facts" className="flex-1 flex items-center justify-center gap-2 px-6">
               <Database className="h-4 w-4" />
-              <span className="hidden sm:inline">Facts</span>
+              <span>Facts</span>
             </TabsTrigger>
-            <TabsTrigger value="monitor" className="flex items-center gap-2">
+            <TabsTrigger value="monitor" className="flex-1 flex items-center justify-center gap-2 px-6">
               <Activity className="h-4 w-4" />
-              <span className="hidden sm:inline">Monitor</span>
+              <span>Monitor</span>
             </TabsTrigger>
           </TabsList>
 

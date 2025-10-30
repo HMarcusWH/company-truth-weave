@@ -74,14 +74,14 @@ export const CompanySearch = () => {
     <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
       {/* Search Panel */}
       <div className="space-y-4">
-        <Card className="p-4">
+        <Card className="p-6 shadow-sm">
           <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search companies by name, ID, or domain..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-10 h-11"
             />
           </div>
         </Card>
@@ -90,8 +90,8 @@ export const CompanySearch = () => {
           {filteredCompanies.map((company) => (
             <Card
               key={company.id}
-              className={`p-4 cursor-pointer transition-colors hover:bg-accent/50 ${
-                selectedCompany?.id === company.id ? "border-primary bg-accent/30" : ""
+              className={`p-4 cursor-pointer transition-all duration-200 hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 active:scale-[0.98] ${
+                selectedCompany?.id === company.id ? "border-primary bg-primary/5 shadow-md" : "hover:bg-accent/50"
               }`}
               onClick={() => setSelectedCompany(company)}
             >
@@ -240,10 +240,13 @@ export const CompanySearch = () => {
             </div>
           </Card>
         ) : (
-          <Card className="p-12">
+          <Card className="p-16 bg-gradient-to-br from-muted/30 to-muted/10">
             <div className="text-center text-muted-foreground">
-              <Search className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Select a company to view details</p>
+              <div className="h-20 w-20 mx-auto mb-6 rounded-full bg-muted/50 flex items-center justify-center">
+                <Search className="h-10 w-10 opacity-40" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No Company Selected</h3>
+              <p className="text-sm">Select a company from the list to view detailed information</p>
             </div>
           </Card>
         )}
