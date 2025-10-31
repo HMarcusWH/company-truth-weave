@@ -235,25 +235,32 @@ serve(async (req) => {
       );
     }
 
-    // Step 2: Concurrency pre-check (block if another recent run is active)
-    const busyThreshold = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-    const { data: recentRunning, error: recentRunningError } = await supabase
-      .from('runs')
-      .select('run_id, started_at')
-      .eq('status_code', 'running')
-      .gt('started_at', busyThreshold)
-      .limit(1);
+    // Step 2: Atomic concurrency control with PostgreSQL advisory lock
+    // Use document ID as lock key to ensure only one run per document at a time
+    const lockKey = 42424242; // Global coordinator lock to enforce single run at a time
+    
+    // Try to acquire exclusive lock with immediate timeout (no waiting)
+    const { data: lockResult, error: lockError } = await supabase
+      .rpc('try_advisory_lock', { key: lockKey });
 
-    if (!recentRunningError && recentRunning && recentRunning.length > 0) {
+    if (lockError) {
+      console.error('Lock acquisition failed:', lockError);
       return new Response(
-        JSON.stringify({ error: 'Another run is already in progress. Try again shortly.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to acquire processing lock' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
-    } else if (recentRunningError) {
-      console.error('Concurrency pre-check failed:', recentRunningError);
     }
 
-    // Step 3: Create coordinator run
+    if (!lockResult) {
+      return new Response(
+        JSON.stringify({ error: 'Another run is already processing this document. Try again shortly.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`Acquired advisory lock ${lockKey} for document ${documentId}`);
+
+    // Step 3: Create coordinator run atomically
     const { data: runData, error: runError } = await supabase
       .from('runs')
       .insert({
@@ -265,6 +272,8 @@ serve(async (req) => {
 
     if (runError || !runData) {
       console.error('Error creating run:', runError);
+      // Release lock before returning
+      await supabase.rpc('advisory_unlock', { key: lockKey });
       return new Response(
         JSON.stringify({ error: 'Failed to create run record' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -280,34 +289,6 @@ serve(async (req) => {
       error_details?: string;
     }> = [];
     let agentCallCount = 0;
-
-    // Step 3.5: Post-insert guard — cancel if another run slipped in
-    const { data: othersRunning } = await supabase
-      .from('runs')
-      .select('run_id')
-      .eq('status_code', 'running')
-      .neq('run_id', runId)
-      .limit(1);
-
-    if (othersRunning && othersRunning.length > 0) {
-      await supabase
-        .from('runs')
-        .update({
-          status_code: 'cancelled',
-          ended_at: new Date().toISOString(),
-          metrics_json: {
-            workflow_status: 'cancelled',
-            reason: 'concurrency_guard',
-            cancelled_at: new Date().toISOString()
-          }
-        })
-        .eq('run_id', runId);
-
-      return new Response(
-        JSON.stringify({ error: 'Run cancelled because another run is already in progress.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     // Step 2.5: Chunk document and store with embeddings
     console.log('Step 2.5: Chunking document...');

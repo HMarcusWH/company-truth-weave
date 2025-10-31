@@ -1722,6 +1722,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      advisory_unlock: { Args: { key: number }; Returns: boolean }
       fk_code_value_ok: {
         Args: { p_code: string; p_set: string }
         Returns: boolean
@@ -1736,6 +1737,7 @@ export type Database = {
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       text2ltree: { Args: { "": string }; Returns: unknown }
+      try_advisory_lock: { Args: { key: number }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
