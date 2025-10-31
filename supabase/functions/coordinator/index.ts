@@ -207,11 +207,24 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const { documentText, documentId, environment = 'dev' } = await req.json();
+    const body = await req.json();
+    const { documentText, documentId, environment = 'dev' } = body;
 
-    if (!documentText || !documentId) {
+    if (!documentText || typeof documentText !== 'string') {
       return new Response(
-        JSON.stringify({ error: 'Missing required parameters: documentText, documentId' }),
+        JSON.stringify({ error: 'documentText is required and must be a string' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (documentText.length < 20 || documentText.length > 1000000) {
+      return new Response(
+        JSON.stringify({ error: 'documentText must be between 20 and 1,000,000 characters' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (!documentId || typeof documentId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(documentId)) {
+      return new Response(
+        JSON.stringify({ error: 'documentId must be a valid UUID' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

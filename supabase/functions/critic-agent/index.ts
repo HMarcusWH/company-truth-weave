@@ -38,11 +38,18 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const { documentId, environment = 'dev', facts: providedFacts } = await req.json();
+    const body = await req.json();
+    const { documentId, environment = 'dev', facts: providedFacts } = body;
 
-    if (!documentId) {
+    if (!documentId || typeof documentId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(documentId)) {
       return new Response(
-        JSON.stringify({ error: 'Missing required parameter: documentId' }),
+        JSON.stringify({ error: 'documentId must be a valid UUID' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (providedFacts && (!Array.isArray(providedFacts) || providedFacts.length > 1000)) {
+      return new Response(
+        JSON.stringify({ error: 'facts must be an array with max 1000 items' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

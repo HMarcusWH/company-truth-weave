@@ -36,11 +36,18 @@ serve(async (req) => {
   let runId: string | null = null;
 
   try {
-    const { documentText, documentId, environment = 'dev' } = await req.json();
+    const body = await req.json();
+    const { documentText, documentId, environment = 'dev' } = body;
     
-    if (!documentText) {
+    if (!documentText || typeof documentText !== 'string' || documentText.length < 20 || documentText.length > 1000000) {
       return new Response(
-        JSON.stringify({ error: 'documentText is required' }),
+        JSON.stringify({ error: 'documentText must be a string between 20 and 1,000,000 characters' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (documentId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(documentId)) {
+      return new Response(
+        JSON.stringify({ error: 'documentId must be a valid UUID' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

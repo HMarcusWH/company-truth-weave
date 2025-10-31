@@ -1,19 +1,19 @@
 project_id = "yazvrhbehgjfhdgcbgsh"
 
 [functions.research-agent]
-verify_jwt = false
+verify_jwt = true
 
 [functions.critic-agent]
-verify_jwt = false
+verify_jwt = true
 
 [functions.resolver-agent]
-verify_jwt = false
+verify_jwt = true
 
 [functions.arbiter-agent]
-verify_jwt = false
+verify_jwt = true
 
 [functions.coordinator]
-verify_jwt = false
+verify_jwt = true
 
 [functions.cleanup-zombie-runs]
-verify_jwt = false
+verify_jwt = true

@@ -37,11 +37,18 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const { entities, facts, environment = 'dev' } = await req.json();
+    const body = await req.json();
+    const { entities, facts, environment = 'dev' } = body;
 
-    if (!entities && !facts) {
+    if ((!entities || !Array.isArray(entities)) && (!facts || !Array.isArray(facts))) {
       return new Response(
-        JSON.stringify({ error: 'Missing required parameter: entities or facts' }),
+        JSON.stringify({ error: 'entities or facts must be provided as arrays' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if ((entities && entities.length > 1000) || (facts && facts.length > 1000)) {
+      return new Response(
+        JSON.stringify({ error: 'Arrays must not exceed 1000 items' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

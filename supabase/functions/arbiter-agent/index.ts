@@ -44,7 +44,21 @@ serve(async (req) => {
   const startTime = Date.now();
 
   try {
-    const { facts, entities, environment = 'dev' } = await req.json();
+    const body = await req.json();
+    const { facts, entities, environment = 'dev' } = body;
+
+    if ((!facts || !Array.isArray(facts)) && (!entities || !Array.isArray(entities))) {
+      return new Response(
+        JSON.stringify({ error: 'facts or entities must be provided as arrays' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if ((facts && facts.length > 1000) || (entities && entities.length > 1000)) {
+      return new Response(
+        JSON.stringify({ error: 'Arrays must not exceed 1000 items' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!facts && !entities) {
       return new Response(
