@@ -235,32 +235,9 @@ serve(async (req) => {
       );
     }
 
-    // Step 2: Atomic concurrency control with PostgreSQL advisory lock
-    // Use document ID as lock key to ensure only one run per document at a time
-    const lockKey = 42424242; // Global coordinator lock to enforce single run at a time
-    
-    // Try to acquire exclusive lock with immediate timeout (no waiting)
-    const { data: lockResult, error: lockError } = await supabase
-      .rpc('try_advisory_lock', { key: lockKey });
-
-    if (lockError) {
-      console.error('Lock acquisition failed:', lockError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to acquire processing lock' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (!lockResult) {
-      return new Response(
-        JSON.stringify({ error: 'Another run is already processing this document. Try again shortly.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    console.log(`Acquired advisory lock ${lockKey} for document ${documentId}`);
-
-    // Step 3: Create coordinator run atomically
+    // Step 2: Single-run guard using DB-level partial unique index
+    // The index (ux_single_running_run) ensures only one row with status_code='running' exists
+    // If another run is active, the insert will fail with code 23505 and we return 429
     const { data: runData, error: runError } = await supabase
       .from('runs')
       .insert({
@@ -271,9 +248,15 @@ serve(async (req) => {
       .single();
 
     if (runError || !runData) {
+      const code = (runError as any)?.code || (runError as any)?.details || '';
+      const msg = (runError as any)?.message || '';
+      if (String(code).includes('23505') || msg.toLowerCase().includes('unique')) {
+        return new Response(
+          JSON.stringify({ error: 'Another run is already in progress. Try again shortly.' }),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
       console.error('Error creating run:', runError);
-      // Release lock before returning
-      await supabase.rpc('advisory_unlock', { key: lockKey });
       return new Response(
         JSON.stringify({ error: 'Failed to create run record' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
