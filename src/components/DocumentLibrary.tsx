@@ -4,6 +4,13 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,6 +22,7 @@ type Doc = {
   id: string;
   title: string;
   doc_type: string;
+  entity_id?: string | null;
   entity_name?: string;
   published_date?: string;
   content_preview?: string;
@@ -25,6 +33,7 @@ type Doc = {
 
 export const DocumentLibrary = () => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [entityFilter, setEntityFilter] = useState<string>("all");
   const [docs, setDocs] = useState<Doc[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<Doc | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
@@ -36,7 +45,7 @@ export const DocumentLibrary = () => {
     try {
       const { data, error } = await (supabase as any)
         .from('documents')
-        .select('id, title, doc_type, published_date, source_url, full_text, confidence, entity_name')
+        .select('id, title, doc_type, published_date, source_url, full_text, confidence, entity_name, entity_id')
         .order('published_date', { ascending: false })
         .limit(100);
       if (error) {
@@ -47,6 +56,7 @@ export const DocumentLibrary = () => {
         id: d.id,
         title: d.title,
         doc_type: d.doc_type,
+        entity_id: d.entity_id,
         entity_name: d.entity_name,
         published_date: d.published_date,
         content_preview: d.full_text?.slice(0, 280),
@@ -64,11 +74,36 @@ export const DocumentLibrary = () => {
     loadDocuments();
   }, []);
 
+  const entityOptions = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    docs.forEach((doc) => {
+      if (doc.entity_id && doc.entity_name) {
+        map.set(doc.entity_id, { id: doc.entity_id, name: doc.entity_name });
+      } else if (!doc.entity_id && doc.entity_name) {
+        const fallbackId = `name:${doc.entity_name.toLowerCase()}`;
+        if (!map.has(fallbackId)) {
+          map.set(fallbackId, { id: fallbackId, name: doc.entity_name });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [docs]);
+
   const filteredDocs = useMemo(() =>
-    docs.filter(doc =>
-      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (doc.entity_name || '').toLowerCase().includes(searchQuery.toLowerCase())
-    ), [docs, searchQuery]);
+    docs.filter((doc) => {
+      const matchesSearch =
+        doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (doc.entity_name || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesEntity =
+        entityFilter === 'all'
+          ? true
+          : doc.entity_id === entityFilter ||
+            (!doc.entity_id && `name:${(doc.entity_name || '').toLowerCase()}` === entityFilter);
+
+      return matchesSearch && matchesEntity;
+    }),
+  [docs, searchQuery, entityFilter]);
 
   function getDocTypeColor(dt: string) {
     const map: Record<string, string> = {
@@ -117,14 +152,37 @@ export const DocumentLibrary = () => {
       {/* Document List */}
       <div className="space-y-4">
         <Card className="p-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-3">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 mb-3">
             <Input
               placeholder="Search documents..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1"
+              className="lg:flex-1"
             />
-            <Button onClick={() => setShowUploadDialog(true)} size="default" className="w-full sm:w-auto">
+            <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <Select value={entityFilter} onValueChange={setEntityFilter}>
+                  <SelectTrigger className="w-full min-w-[200px]">
+                    <SelectValue placeholder="Filter by company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All companies</SelectItem>
+                    {entityOptions.map((entity) => (
+                      <SelectItem key={entity.id} value={entity.id}>
+                        {entity.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {entityFilter !== 'all' && (
+                  <Button type="button" variant="ghost" size="icon" onClick={() => setEntityFilter('all')}>
+                    <span className="sr-only">Clear company filter</span>
+                    ×
+                  </Button>
+                )}
+              </div>
+            </div>
+            <Button onClick={() => setShowUploadDialog(true)} size="default" className="w-full lg:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               <span>Upload</span>
             </Button>

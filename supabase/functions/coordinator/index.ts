@@ -148,12 +148,163 @@ function detectTypedValue(objectStr: string, predicate: string): any {
   return typed;
 }
 
+type FactTransformOptions = {
+  documentId: string;
+  documentText: string;
+  fallbackSourceUrl?: string | null;
+  criticResult?: any;
+  arbiterResult?: any;
+};
+
+function normalizeKey(value: any): string | null {
+  if (value === null || value === undefined) return null;
+  const str = String(value).trim();
+  return str.length > 0 ? str.toLowerCase() : null;
+}
+
+function tripleKey(subject: string, predicate: string, object: string): string {
+  return `${subject}||${predicate}||${object}`.toLowerCase();
+}
+
+function buildCriticIssueIndex(validation: any): Map<string, number> {
+  const index = new Map<string, number>();
+  if (!validation) return index;
+
+  const register = (raw: any, penalty: number) => {
+    const key = normalizeKey(raw);
+    if (!key) return;
+    const existing = index.get(key) ?? 0;
+    index.set(key, Math.max(existing, penalty));
+  };
+
+  const registerIssue = (issue: any, penalty: number) => {
+    if (issue === null || issue === undefined) return;
+    if (typeof issue === 'string' || typeof issue === 'number') {
+      register(issue, penalty);
+      return;
+    }
+
+    if (typeof issue.fact_id !== 'undefined') {
+      register(`id:${issue.fact_id}`, penalty);
+    }
+    if (Array.isArray(issue.fact_ids)) {
+      issue.fact_ids.forEach((id: any) => register(`id:${id}`, penalty));
+    }
+    if (typeof issue.normalized_statement === 'string') {
+      register(issue.normalized_statement, penalty);
+    }
+    if (typeof issue.original_statement === 'string') {
+      register(issue.original_statement, penalty);
+    }
+    if (typeof issue.statement === 'string') {
+      register(issue.statement, penalty);
+    }
+    if (issue.subject && issue.predicate && issue.object) {
+      register(tripleKey(String(issue.subject), String(issue.predicate), String(issue.object)), penalty);
+    }
+  };
+
+  (validation.missing_citations ?? []).forEach((item: any) => registerIssue(item, 0.2));
+  (validation.schema_errors ?? []).forEach((item: any) => registerIssue(item, 0.25));
+  (validation.contradictions ?? []).forEach((item: any) => {
+    registerIssue(item, 0.3);
+    if (Array.isArray(item?.fact_ids)) {
+      item.fact_ids.forEach((id: any) => register(`id:${id}`, 0.3));
+    }
+  });
+  if (Array.isArray(validation.issues)) {
+    validation.issues.forEach((issue: any) => {
+      const severity = String(issue?.severity ?? '').toLowerCase();
+      const penalty = severity === 'high' ? 0.3 : severity === 'medium' ? 0.2 : 0.1;
+      registerIssue(issue, penalty);
+    });
+  }
+
+  return index;
+}
+
+function extractEvidenceText(span: any, fallbackText: string | null, documentText: string): string | null {
+  if (span && typeof span.start === 'number' && typeof span.end === 'number' && span.end > span.start) {
+    const safeStart = Math.max(0, span.start);
+    const safeEnd = Math.min(documentText.length, span.end);
+    if (safeEnd > safeStart) {
+      const snippet = documentText.slice(safeStart, safeEnd).trim();
+      if (snippet.length > 0) {
+        return snippet;
+      }
+    }
+  }
+  const cleanFallback = fallbackText?.trim();
+  return cleanFallback && cleanFallback.length > 0 ? cleanFallback : null;
+}
+
+function calculateFactConfidence(
+  baseCandidate: number | null | undefined,
+  fact: any,
+  subject: string,
+  predicate: string,
+  object: string,
+  validation: any,
+  criticIssues: Map<string, number>,
+  arbiterResult: any
+): number {
+  let confidence = typeof baseCandidate === 'number' ? baseCandidate : 0.8;
+
+  const validationScore = clampConfidence(validation?.confidence_score);
+  if (validationScore !== null) {
+    confidence = (confidence + validationScore) / 2;
+  }
+
+  const keys = new Set<string>();
+  const pushKey = (value: any) => {
+    const key = normalizeKey(value);
+    if (key) keys.add(key);
+  };
+
+  if (fact?.id) pushKey(`id:${fact.id}`);
+  if (fact?.fact_id) pushKey(`id:${fact.fact_id}`);
+  if (fact?.derived?.fact_id) pushKey(`id:${fact.derived.fact_id}`);
+  if (fact?.derived?.source_fact_id) pushKey(`id:${fact.derived.source_fact_id}`);
+  if (fact?.normalized_statement) pushKey(fact.normalized_statement);
+  if (fact?.original_statement) pushKey(fact.original_statement);
+  pushKey(tripleKey(String(subject), String(predicate), String(object)));
+
+  let penalty = 0;
+  keys.forEach((key) => {
+    const keyPenalty = criticIssues.get(key);
+    if (typeof keyPenalty === 'number') {
+      penalty = Math.max(penalty, keyPenalty);
+    }
+  });
+
+  if (!fact?.evidence && !fact?.evidence_text && !fact?.derived?.evidence_text) {
+    penalty = Math.max(penalty, 0.15);
+  }
+
+  if (penalty > 0) {
+    confidence -= penalty;
+  }
+
+  const decision = arbiterResult?.policy?.decision;
+  if (decision === 'WARN') {
+    confidence -= 0.1;
+  } else if (decision === 'BLOCK') {
+    confidence = 0;
+  }
+
+  const finalValue = clampConfidence(confidence);
+  return finalValue ?? 0.8;
+}
+
 /**
  * Transforms resolver-agent output to database-ready fact rows.
- * Extracts subject-predicate-object triples from nested JSON structures
- * and detects typed values for structured storage.
+ * Extracts subject-predicate-object triples from nested JSON structures,
+ * enriches provenance, and normalizes confidence scores.
  */
-function transformNormalizedFacts(facts: any[] = [], documentId: string) {
+function transformNormalizedFacts(facts: any[] = [], options: FactTransformOptions) {
+  const validation = options.criticResult?.validation;
+  const criticIssues = buildCriticIssueIndex(validation);
+
   return facts
     .map((fact: any) => {
       const derived = fact?.derived ?? {};
@@ -164,7 +315,7 @@ function transformNormalizedFacts(facts: any[] = [], documentId: string) {
       const object = triple.object ?? derived.object ?? derived.value ?? null;
 
       if (!subject || !predicate || !object) {
-        console.warn('Fact filtered - missing triple components:', { 
+        console.warn('Fact filtered - missing triple components:', {
           subject: !!subject, predicate: !!predicate, object: !!object,
           fact_structure: Object.keys(fact),
           derived_keys: Object.keys(derived)
@@ -173,25 +324,68 @@ function transformNormalizedFacts(facts: any[] = [], documentId: string) {
       }
 
       const evidence = derived.evidence ?? {};
-      const evidenceText = evidence.text ?? derived.evidence_text ?? fact.evidence_text ?? fact.normalized_statement ?? fact.original_statement ?? null;
-      const evidenceDocId = evidence.document_id ?? derived.evidence_doc_id ?? derived.document_id ?? documentId;
       const span = evidence.span ?? derived.evidence_span ?? fact.evidence_span;
-      const confidenceCandidate = clampConfidence(fact.confidence_numeric ?? derived.confidence);
-      const statusCandidate = typeof derived.status === 'string' && FACT_STATUS_VALUES.has(derived.status) ? derived.status : 'verified';
+      const evidenceDocId = evidence.document_id ?? derived.evidence_doc_id ?? derived.document_id ?? options.documentId;
+      const fallbackEvidenceText = evidence.text
+        ?? derived.evidence_text
+        ?? fact.evidence_text
+        ?? fact.normalized_statement
+        ?? fact.original_statement
+        ?? null;
+      const evidenceText = extractEvidenceText(span, fallbackEvidenceText, options.documentText);
+      const evidenceUrl = evidence.url
+        ?? derived.evidence_url
+        ?? derived.url
+        ?? fact.evidence_url
+        ?? options.fallbackSourceUrl
+        ?? null;
+
+      if (!evidenceDocId) {
+        console.warn('Fact filtered - missing evidence_doc_id', { fact });
+        return null;
+      }
+      if (!evidenceText) {
+        console.warn('Fact filtered - missing evidence_text', { fact });
+        return null;
+      }
+
+      const baseConfidence = clampConfidence(fact.confidence_numeric ?? derived.confidence ?? fact.confidence);
+      const normalizedConfidence = calculateFactConfidence(
+        baseConfidence,
+        fact,
+        String(subject),
+        String(predicate),
+        String(object),
+        validation,
+        criticIssues,
+        options.arbiterResult
+      );
+      const statusCandidate = typeof derived.status === 'string' && FACT_STATUS_VALUES.has(derived.status)
+        ? derived.status
+        : 'verified';
 
       // Detect typed values
       const typedValues = detectTypedValue(String(object), String(predicate));
+      const valueEntityId = typeof derived.value_entity_id === 'string'
+        ? derived.value_entity_id
+        : typeof derived.entity_id === 'string'
+          ? derived.entity_id
+          : typeof derived.object_entity_id === 'string'
+            ? derived.object_entity_id
+            : null;
 
       return {
         subject,
         predicate,
         object,
-        ...typedValues, // Add typed columns
-        evidence_text: evidenceText ?? null,
-        evidence_doc_id: evidenceDocId ?? documentId,
+        ...typedValues,
+        value_entity_id: valueEntityId ?? null,
+        evidence_text: evidenceText,
+        evidence_doc_id: evidenceDocId,
+        evidence_url: evidenceUrl,
         evidence_span_start: typeof span?.start === 'number' ? span.start : null,
         evidence_span_end: typeof span?.end === 'number' ? span.end : null,
-        confidence: confidenceCandidate ?? 0.8,
+        confidence: normalizedConfidence,
         status: statusCandidate,
         created_by: null
       };
@@ -363,6 +557,32 @@ serve(async (req) => {
     let resolverResult: any = null;
     let criticResult: any = null;
     let arbiterResult: any = null;
+
+    const { data: documentRecord, error: documentError } = await supabase
+      .from('documents')
+      .select('id, source_url')
+      .eq('id', documentId)
+      .single();
+
+    if (documentError || !documentRecord) {
+      await supabase
+        .from('runs')
+        .update({
+          status_code: 'error',
+          ended_at: new Date().toISOString(),
+          metrics_json: {
+            workflow_status: 'error',
+            error: 'Document not found',
+            document_id: documentId
+          }
+        })
+        .eq('run_id', runId);
+
+      return new Response(
+        JSON.stringify({ error: 'Document not found for ingestion' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     try {
       // ====== PIPELINE EXECUTION ======
@@ -561,7 +781,13 @@ serve(async (req) => {
       console.log('Arbiter decision:', arbiterResult?.policy?.decision);
       if (arbiterResult?.policy?.decision === 'ALLOW' && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
         const factsToStore = resolverResult.normalized.normalized_facts;
-        const factRows = transformNormalizedFacts(factsToStore, documentId);
+        const factRows = transformNormalizedFacts(factsToStore, {
+          documentId,
+          documentText,
+          fallbackSourceUrl: documentRecord?.source_url ?? null,
+          criticResult,
+          arbiterResult
+        });
 
         if (factRows.length === 0) {
           console.log('No well-formed facts available after normalization; skipping insert.');
