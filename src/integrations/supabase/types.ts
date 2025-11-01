@@ -1734,9 +1734,6 @@ export type Database = {
         }
         Returns: boolean
       }
-      show_limit: { Args: never; Returns: number }
-      show_trgm: { Args: { "": string }; Returns: string[] }
-      text2ltree: { Args: { "": string }; Returns: unknown }
       try_advisory_lock: { Args: { key: number }; Returns: boolean }
     }
     Enums: {
