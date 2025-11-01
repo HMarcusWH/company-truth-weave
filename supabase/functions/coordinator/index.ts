@@ -45,6 +45,22 @@ function checkRateLimit(userId: string): { allowed: boolean; resetTime: number }
   return { allowed: true, resetTime: userLimit.resetTime };
 }
 
+/**
+ * Invokes an agent with authenticated request headers.
+ * Ensures auth token is forwarded to prevent 401 errors.
+ */
+async function invokeAgentWithAuth(
+  supabase: any,
+  functionName: string,
+  body: any,
+  authHeader: string
+) {
+  return supabase.functions.invoke(functionName, {
+    body,
+    headers: { Authorization: authHeader }
+  });
+}
+
 // Budget constraints to prevent runaway costs
 const MAX_RETRIES = 5;        // Maximum retry attempts per agent
 const MAX_AGENT_CALLS = 5;    // Maximum total agent invocations
@@ -340,283 +356,286 @@ serve(async (req) => {
       error_details?: string;
     }> = [];
     let agentCallCount = 0;
-
-    // Step 2.5: Chunk document and store with embeddings
-    console.log('Step 2.5: Chunking document...');
-    const chunks = chunkText(documentText);
-    console.log(`Created ${chunks.length} chunks from document`);
+    let finalStatus = 'success';
+    let entitiesStored = 0;
+    let factsStored = 0;
+    let researchResult: any = null;
+    let resolverResult: any = null;
+    let criticResult: any = null;
+    let arbiterResult: any = null;
 
     try {
-      // Store chunks
-      const chunkInserts = chunks.map((text, idx) => ({
-        document_id: documentId,
-        seq: idx,
-        chunk_text: text,
-        word_count: text.split(/\s+/).length
-      }));
-      
-      const { data: insertedChunks, error: chunkError } = await supabase
-        .from('document_chunks')
-        .insert(chunkInserts)
-        .select();
-      
-      if (!chunkError && insertedChunks) {
-        console.log(`Stored ${insertedChunks.length} document chunks`);
-        // Note: Embeddings will be generated asynchronously via a separate process
-      }
-    } catch (error: any) {
-      console.error('Error storing document chunks:', error);
-      // Non-fatal error, continue processing
-    }
+      // ====== PIPELINE EXECUTION ======
 
-    // Step 3: Call research-agent
-    console.log('Step 1: Calling research-agent...');
-    let researchResult: any = null;
-    
-    if (agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+      // Step 2.5: Chunk document and store with embeddings
+      console.log('Step 2.5: Chunking document...');
+      const chunks = chunkText(documentText);
+      console.log(`Created ${chunks.length} chunks from document`);
+
       try {
-        agentCallCount++;
-        const researchResponse = await retryWithBackoff(() =>
-          supabase.functions.invoke('research-agent', {
-            body: { documentText, documentId, environment }
-          })
-        );
-
-        if (researchResponse.error) {
-          errors.push({ step: 'research', message: researchResponse.error.message });
-        } else {
-          researchResult = researchResponse.data;
-          stepsCompleted.push('research');
-          console.log('Research-agent completed successfully');
+        // Store chunks
+        const chunkInserts = chunks.map((text, idx) => ({
+          document_id: documentId,
+          seq: idx,
+          chunk_text: text,
+          word_count: text.split(/\s+/).length
+        }));
+        
+        const { data: insertedChunks, error: chunkError } = await supabase
+          .from('document_chunks')
+          .insert(chunkInserts)
+          .select();
+        
+        if (!chunkError && insertedChunks) {
+          console.log(`Stored ${insertedChunks.length} document chunks`);
+          // Note: Embeddings will be generated asynchronously via a separate process
         }
       } catch (error: any) {
-        errors.push({ step: 'research', message: error.message });
+        console.error('Error storing document chunks:', error);
+        // Non-fatal error, continue processing
       }
-    }
 
-    // Step 4: Call resolver-agent (if research succeeded)
-    let resolverResult: any = null;
-    
-    if (researchResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
-      console.log('Step 2: Calling resolver-agent...');
-      try {
-        agentCallCount++;
-        const resolverResponse = await retryWithBackoff(() =>
-          supabase.functions.invoke('resolver-agent', {
-            body: {
-              entities: researchResult.entities || [],
-              facts: researchResult.facts || [],
-              environment
-            }
-          })
-        );
+      // Step 3: Call research-agent
+      console.log('Step 1: Calling research-agent...');
+      
+      if (agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+        try {
+          agentCallCount++;
+          const researchResponse = await retryWithBackoff(() =>
+            invokeAgentWithAuth(supabase, 'research-agent', { documentText, documentId, environment }, authHeader)
+          );
 
-        if (resolverResponse.error) {
-          // Fail fast if function not found
-          if (resolverResponse.error.message?.includes('not found') || 
-              resolverResponse.error.message?.includes('FunctionsRelayError')) {
-            errors.push({ 
-              step: 'resolver', 
-              message: 'resolver-agent function not found or not deployed' 
-            });
-            console.error('Resolver function missing - skipping retries');
-            // Don't retry, continue to finalize
+          if (researchResponse.error) {
+            errors.push({ step: 'research', message: researchResponse.error.message });
           } else {
-            errors.push({ step: 'resolver', message: resolverResponse.error.message });
+            researchResult = researchResponse.data;
+            stepsCompleted.push('research');
+            console.log('Research-agent completed successfully');
           }
-        } else {
-          resolverResult = resolverResponse.data;
-          stepsCompleted.push('resolver');
-          console.log('Resolver-agent completed successfully');
+        } catch (error: any) {
+          errors.push({ step: 'research', message: error.message });
         }
-      } catch (error: any) {
-        errors.push({ step: 'resolver', message: error.message });
       }
-    }
 
-    // Step 5: Call critic-agent (if resolver succeeded)
-    let criticResult: any = null;
-    
-    if (resolverResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
-      console.log('Step 3: Calling critic-agent...');
-      try {
-        agentCallCount++;
-        const criticFacts = resolverResult?.normalized?.normalized_facts?.length
-          ? resolverResult.normalized.normalized_facts
-          : (researchResult?.facts || []);
+      // Step 4: Call resolver-agent (if research succeeded)
+      
+      if (researchResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+        console.log('Step 2: Calling resolver-agent...');
+        try {
+          agentCallCount++;
+          const resolverResponse = await retryWithBackoff(() =>
+            invokeAgentWithAuth(supabase, 'resolver-agent', {
+              entities: researchResult.entities || [],
+              facts: researchResult.facts || [],
+              environment
+            }, authHeader)
+          );
 
-        const criticResponse = await retryWithBackoff(() =>
-          supabase.functions.invoke('critic-agent', {
-            body: { documentId, environment, facts: criticFacts }
-          })
-        );
-
-        if (criticResponse.error) {
-          errors.push({ step: 'critic', message: criticResponse.error.message });
-        } else {
-          criticResult = criticResponse.data;
-          stepsCompleted.push('critic');
-          console.log('Critic-agent completed successfully');
+          if (resolverResponse.error) {
+            // Fail fast if function not found
+            if (resolverResponse.error.message?.includes('not found') || 
+                resolverResponse.error.message?.includes('FunctionsRelayError')) {
+              errors.push({ 
+                step: 'resolver', 
+                message: 'resolver-agent function not found or not deployed' 
+              });
+              console.error('Resolver function missing - skipping retries');
+              // Don't retry, continue to finalize
+            } else {
+              errors.push({ step: 'resolver', message: resolverResponse.error.message });
+            }
+          } else {
+            resolverResult = resolverResponse.data;
+            stepsCompleted.push('resolver');
+            console.log('Resolver-agent completed successfully');
+          }
+        } catch (error: any) {
+          errors.push({ step: 'resolver', message: error.message });
         }
-      } catch (error: any) {
-        errors.push({ step: 'critic', message: error.message });
       }
-    }
 
-    // Step 6: Call arbiter-agent (if critic passed)
-    let arbiterResult: any = null;
-    
-    if (criticResult?.validation?.is_valid && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
-      console.log('Step 4: Calling arbiter-agent...');
-      try {
-        agentCallCount++;
-        const arbiterResponse = await retryWithBackoff(() =>
-          supabase.functions.invoke('arbiter-agent', {
-            body: {
+      // Step 5: Call critic-agent (if resolver succeeded)
+      
+      if (resolverResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+        console.log('Step 3: Calling critic-agent...');
+        try {
+          agentCallCount++;
+          const criticFacts = resolverResult?.normalized?.normalized_facts?.length
+            ? resolverResult.normalized.normalized_facts
+            : (researchResult?.facts || []);
+
+          const criticResponse = await retryWithBackoff(() =>
+            invokeAgentWithAuth(supabase, 'critic-agent', { documentId, environment, facts: criticFacts }, authHeader)
+          );
+
+          if (criticResponse.error) {
+            errors.push({ step: 'critic', message: criticResponse.error.message });
+          } else {
+            criticResult = criticResponse.data;
+            stepsCompleted.push('critic');
+            console.log('Critic-agent completed successfully');
+          }
+        } catch (error: any) {
+          errors.push({ step: 'critic', message: error.message });
+        }
+      }
+
+      // Step 6: Call arbiter-agent (if critic passed)
+      
+      if (criticResult?.validation?.is_valid && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+        console.log('Step 4: Calling arbiter-agent...');
+        try {
+          agentCallCount++;
+          const arbiterResponse = await retryWithBackoff(() =>
+            invokeAgentWithAuth(supabase, 'arbiter-agent', {
               facts: researchResult.facts || [],
               entities: researchResult.entities || [],
               environment
-            }
-          })
-        );
+            }, authHeader)
+          );
 
-        if (arbiterResponse.error) {
-          errors.push({ step: 'arbiter', message: arbiterResponse.error.message });
+          if (arbiterResponse.error) {
+            errors.push({ step: 'arbiter', message: arbiterResponse.error.message });
+          } else {
+            arbiterResult = arbiterResponse.data;
+            stepsCompleted.push('arbiter');
+            console.log('Arbiter-agent completed successfully');
+            console.log('Arbiter decision:', arbiterResult?.policy?.decision);
+            
+            // Validate arbiter response structure
+            if (!arbiterResult?.policy || !arbiterResult?.policy?.decision) {
+              console.error('Invalid arbiter response structure:', arbiterResult);
+              errors.push({ 
+                step: 'arbiter', 
+                message: 'Arbiter returned malformed response: missing policy.decision' 
+              });
+            }
+          }
+        } catch (error: any) {
+          console.error('Arbiter-agent failed:', error);
+          console.error('Error stack:', error.stack);
+          errors.push({ 
+            step: 'arbiter', 
+            message: error.message,
+            error_code: error.code,
+            error_details: error.toString()
+          });
+        }
+      }
+
+      // Step 7: Store entities (after resolver, before arbiter)
+      
+      if (resolverResult?.normalized?.normalized_entities && resolverResult.normalized.normalized_entities.length > 0) {
+        const entitiesToStore = resolverResult.normalized.normalized_entities;
+        
+        const { data: insertedEntities, error: entityError } = await supabase
+          .from('entities')
+          .insert(entitiesToStore.map((e: any) => ({
+            legal_name: e.canonical_name || e.original_name,
+            entity_type: e.entity_type,
+            identifiers: e.derived?.identifiers || {},
+            trading_names: e.original_name !== e.canonical_name ? [e.original_name] : [],
+            addresses: e.derived?.addresses || [],
+            relationships: e.derived?.relationships || [],
+            website: e.derived?.website,
+            metadata: { 
+              source: 'coordinator', 
+              document_id: documentId,
+              run_id: runId,
+              original_name: e.original_name
+            }
+          })))
+          .select('id');
+        
+        if (!entityError && insertedEntities) {
+          entitiesStored = insertedEntities.length;
+          console.log(`Stored ${entitiesStored} entities after resolver`);
+        } else if (entityError) {
+          console.error('Error storing entities:', entityError);
+          errors.push({ step: 'entity-storage', message: entityError.message });
+        }
+      }
+
+      // Step 8: Store facts (only if arbiter approved)
+      
+      console.log('Arbiter decision:', arbiterResult?.policy?.decision);
+      if (arbiterResult?.policy?.decision === 'ALLOW' && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
+        const factsToStore = resolverResult.normalized.normalized_facts;
+        const factRows = transformNormalizedFacts(factsToStore, documentId);
+
+        if (factRows.length === 0) {
+          console.log('No well-formed facts available after normalization; skipping insert.');
         } else {
-          arbiterResult = arbiterResponse.data;
-          stepsCompleted.push('arbiter');
-          console.log('Arbiter-agent completed successfully');
-          console.log('Arbiter decision:', arbiterResult?.policy?.decision);
-          
-          // Validate arbiter response structure
-          if (!arbiterResult?.policy || !arbiterResult?.policy?.decision) {
-            console.error('Invalid arbiter response structure:', arbiterResult);
-            errors.push({ 
-              step: 'arbiter', 
-              message: 'Arbiter returned malformed response: missing policy.decision' 
-            });
+          const { data: insertedFacts, error: factError } = await supabase
+            .from('facts')
+            .insert(factRows)
+            .select('id');
+
+          if (!factError && insertedFacts) {
+            factsStored = insertedFacts.length;
+            console.log(`Stored ${factsStored} facts after arbiter approval`);
+          } else if (factError) {
+            console.error('Error storing facts:', factError);
+            errors.push({ step: 'fact-storage', message: factError.message });
           }
         }
-      } catch (error: any) {
-        console.error('Arbiter-agent failed:', error);
-        console.error('Error stack:', error.stack);
+      } else if (arbiterResult?.policy?.decision === 'BLOCK') {
+        console.log('Facts blocked by arbiter - not storing');
+      } else if (arbiterResult?.policy?.decision === 'WARN') {
+        console.log('Facts flagged with warning by arbiter - not storing');
+      } else {
+        console.log('No arbiter decision or facts not ready for storage');
+      }
+
+      // Step 9: Determine workflow status
+      const totalLatency = Date.now() - startTime;
+      const budgetExceeded = agentCallCount >= MAX_AGENT_CALLS || totalLatency >= MAX_LATENCY_MS;
+      
+      if (errors.length > 0 || !arbiterResult) {
+        finalStatus = stepsCompleted.length > 0 ? 'partial' : 'error';
+      }
+      if (budgetExceeded) {
+        finalStatus = 'partial';
         errors.push({ 
-          step: 'arbiter', 
-          message: error.message,
-          error_code: error.code,
-          error_details: error.toString()
+          step: 'coordinator', 
+          message: `Budget exceeded: ${agentCallCount}/${MAX_AGENT_CALLS} calls, ${totalLatency}ms/${MAX_LATENCY_MS}ms` 
         });
       }
-    }
 
-    // Step 7: Store entities (after resolver, before arbiter)
-    let entitiesStored = 0;
-    
-    if (resolverResult?.normalized?.normalized_entities && resolverResult.normalized.normalized_entities.length > 0) {
-      const entitiesToStore = resolverResult.normalized.normalized_entities;
-      
-      const { data: insertedEntities, error: entityError } = await supabase
-        .from('entities')
-        .insert(entitiesToStore.map((e: any) => ({
-          legal_name: e.canonical_name || e.original_name,
-          entity_type: e.entity_type,
-          identifiers: e.derived?.identifiers || {},
-          trading_names: e.original_name !== e.canonical_name ? [e.original_name] : [],
-          addresses: e.derived?.addresses || [],
-          relationships: e.derived?.relationships || [],
-          website: e.derived?.website,
-          metadata: { 
-            source: 'coordinator', 
-            document_id: documentId,
-            run_id: runId,
-            original_name: e.original_name
+    } catch (error: any) {
+      console.error('Fatal error in coordinator pipeline:', error);
+      errors.push({ step: 'fatal', message: error.message });
+      finalStatus = 'error';
+    } finally {
+      // ALWAYS update run status, even if pipeline crashed
+      const totalLatency = Date.now() - startTime;
+      await supabase
+        .from('runs')
+        .update({
+          status_code: finalStatus,
+          ended_at: new Date().toISOString(),
+          metrics_json: {
+            workflow_status: finalStatus,
+            steps_completed: stepsCompleted,
+            total_latency_ms: totalLatency,
+            agent_calls: agentCallCount,
+            entities_extracted: researchResult?.entities?.length || 0,
+            facts_extracted: researchResult?.facts?.length || 0,
+            entities_stored: entitiesStored,
+            facts_stored: factsStored,
+            arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
+            errors_count: errors.length,
+            errors: errors.length > 0 ? errors : undefined
           }
-        })))
-        .select('id');
-      
-      if (!entityError && insertedEntities) {
-        entitiesStored = insertedEntities.length;
-        console.log(`Stored ${entitiesStored} entities after resolver`);
-      } else if (entityError) {
-        console.error('Error storing entities:', entityError);
-        errors.push({ step: 'entity-storage', message: entityError.message });
-      }
+        })
+        .eq('run_id', runId);
     }
-
-    // Step 8: Store facts (only if arbiter approved)
-    let factsStored = 0;
-    
-    console.log('Arbiter decision:', arbiterResult?.policy?.decision);
-    if (arbiterResult?.policy?.decision === 'ALLOW' && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
-      const factsToStore = resolverResult.normalized.normalized_facts;
-      const factRows = transformNormalizedFacts(factsToStore, documentId);
-
-      if (factRows.length === 0) {
-        console.log('No well-formed facts available after normalization; skipping insert.');
-      } else {
-        const { data: insertedFacts, error: factError } = await supabase
-          .from('facts')
-          .insert(factRows)
-          .select('id');
-
-        if (!factError && insertedFacts) {
-          factsStored = insertedFacts.length;
-          console.log(`Stored ${factsStored} facts after arbiter approval`);
-        } else if (factError) {
-          console.error('Error storing facts:', factError);
-          errors.push({ step: 'fact-storage', message: factError.message });
-        }
-      }
-    } else if (arbiterResult?.policy?.decision === 'BLOCK') {
-      console.log('Facts blocked by arbiter - not storing');
-    } else if (arbiterResult?.policy?.decision === 'WARN') {
-      console.log('Facts flagged with warning by arbiter - not storing');
-    } else {
-      console.log('No arbiter decision or facts not ready for storage');
-    }
-
-    // Step 8: Determine workflow status
-    const totalLatency = Date.now() - startTime;
-    const budgetExceeded = agentCallCount >= MAX_AGENT_CALLS || totalLatency >= MAX_LATENCY_MS;
-    
-    let workflowStatus = 'success';
-    if (errors.length > 0 || !arbiterResult) {
-      workflowStatus = stepsCompleted.length > 0 ? 'partial' : 'failed';
-    }
-    if (budgetExceeded) {
-      workflowStatus = 'partial';
-      errors.push({ 
-        step: 'coordinator', 
-        message: `Budget exceeded: ${agentCallCount}/${MAX_AGENT_CALLS} calls, ${totalLatency}ms/${MAX_LATENCY_MS}ms` 
-      });
-    }
-
-    // Step 9: Update run status
-    await supabase
-      .from('runs')
-      .update({
-        status_code: workflowStatus,
-        ended_at: new Date().toISOString(),
-        metrics_json: {
-          workflow_status: workflowStatus,
-          steps_completed: stepsCompleted,
-          total_latency_ms: totalLatency,
-          agent_calls: agentCallCount,
-          entities_extracted: researchResult?.entities?.length || 0,
-          facts_extracted: researchResult?.facts?.length || 0,
-          entities_stored: entitiesStored,
-          facts_stored: factsStored,
-          arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
-          errors_count: errors.length
-        }
-      })
-      .eq('run_id', runId);
 
     return new Response(
       JSON.stringify({
-        success: workflowStatus === 'success',
+        success: finalStatus === 'success',
         run_id: runId,
-        status: workflowStatus,
+        status: finalStatus,
         entities_extracted: researchResult?.entities?.length || 0,
         facts_extracted: researchResult?.facts?.length || 0,
         entities_stored: entitiesStored,
@@ -629,7 +648,7 @@ serve(async (req) => {
           { agent_name: 'critic-agent', status: criticResult ? 'success' : 'failed' },
           { agent_name: 'arbiter-agent', status: arbiterResult ? 'success' : 'failed' }
         ].filter(a => stepsCompleted.includes(a.agent_name.split('-')[0])),
-        total_latency_ms: totalLatency,
+        total_latency_ms: Date.now() - startTime,
         errors
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

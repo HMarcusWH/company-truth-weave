@@ -18,6 +18,7 @@ type Doc = {
   entity_name?: string;
   published_date?: string;
   content_preview?: string;
+  full_text?: string;
   source_url?: string;
   confidence?: number;
 };
@@ -27,15 +28,19 @@ export const DocumentLibrary = () => {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<Doc | null>(null);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showFullText, setShowFullText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const loadDocuments = async () => {
+    setLoading(true);
+    try {
       const { data, error } = await (supabase as any)
         .from('documents')
         .select('id, title, doc_type, published_date, source_url, full_text, confidence, entity_name')
         .order('published_date', { ascending: false })
         .limit(100);
       if (error) {
-        toast({ title: 'Failed to load documents', description: error.message } as any);
+        toast({ title: 'Failed to load documents', description: error.message, variant: 'destructive' } as any);
         return;
       }
       const mapped: Doc[] = (data ?? []).map((d: any) => ({
@@ -45,11 +50,15 @@ export const DocumentLibrary = () => {
         entity_name: d.entity_name,
         published_date: d.published_date,
         content_preview: d.full_text?.slice(0, 280),
+        full_text: d.full_text,
         source_url: d.source_url,
         confidence: d.confidence ?? undefined,
       }));
       setDocs(mapped);
-    };
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadDocuments();
@@ -104,54 +113,75 @@ export const DocumentLibrary = () => {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[400px_1fr]">
+    <div className="grid gap-6 grid-cols-1 lg:grid-cols-[400px_1fr]">
       {/* Document List */}
       <div className="space-y-4">
         <Card className="p-4">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-3">
             <Input
               placeholder="Search documents..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1"
             />
-            <Button onClick={() => setShowUploadDialog(true)} size="default">
+            <Button onClick={() => setShowUploadDialog(true)} size="default" className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
-              Upload Document
+              <span>Upload</span>
             </Button>
           </div>
         </Card>
 
-        <div className="space-y-2">
-          {filteredDocs.map((doc) => (
-            <Card
-              key={doc.id}
-              className={`p-4 cursor-pointer transition-colors hover:bg-accent/50 ${
-                selectedDoc?.id === doc.id ? "border-primary bg-accent/30" : ""
-              }`}
-              onClick={() => setSelectedDoc(doc)}
-            >
-              <div className="space-y-2">
-                <div className="flex items-start gap-2">
-                  <FileText className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm line-clamp-2">{doc.title}</h3>
+        {loading ? (
+          <Card className="p-8">
+            <div className="text-center text-muted-foreground">
+              <FileText className="h-8 w-8 mx-auto mb-2 animate-pulse" />
+              <p>Loading documents...</p>
+            </div>
+          </Card>
+        ) : filteredDocs.length === 0 ? (
+          <Card className="p-8">
+            <div className="text-center text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p className="font-medium mb-2">No documents found</p>
+              <p className="text-sm">
+                {searchQuery 
+                  ? 'Try a different search term' 
+                  : 'Upload your first document to get started'}
+              </p>
+            </div>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {filteredDocs.map((doc) => (
+              <Card
+                key={doc.id}
+                className={`p-4 cursor-pointer transition-colors hover:bg-accent/50 ${
+                  selectedDoc?.id === doc.id ? "border-primary bg-accent/30" : ""
+                }`}
+                onClick={() => setSelectedDoc(doc)}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <FileText className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm line-clamp-2 break-words">{doc.title}</h3>
+                    </div>
                   </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge className={`text-xs ${getDocTypeColor(doc.doc_type)}`}>
+                      {getDocTypeLabel(doc.doc_type)}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{doc.published_date ?? ''}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Building2 className="h-3 w-3" />
+                    {doc.entity_name ?? '—'}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge className={`text-xs ${getDocTypeColor(doc.doc_type)}`}>
-                    {getDocTypeLabel(doc.doc_type)}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">{doc.published_date ?? ''}</span>
-                </div>
-                <p className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Building2 className="h-3 w-3" />
-                  {doc.entity_name ?? '—'}
-                </p>
-              </div>
-            </Card>
-          ))}
-        </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Document Detail */}
@@ -198,11 +228,32 @@ export const DocumentLibrary = () => {
               {/* Content */}
               <div>
                 <h3 className="text-sm font-semibold text-foreground mb-3">Document Content</h3>
-                <div className="prose prose-sm max-w-none">
-                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                    {selectedDoc.content_preview}
-                  </p>
+                <div className="relative">
+                  <div className={`prose prose-sm max-w-none ${
+                    showFullText === selectedDoc.id ? '' : 'max-h-[400px] overflow-hidden'
+                  }`}>
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {showFullText === selectedDoc.id 
+                        ? selectedDoc.full_text 
+                        : selectedDoc.content_preview}
+                    </p>
+                  </div>
+                  {showFullText !== selectedDoc.id && selectedDoc.full_text && selectedDoc.full_text.length > 280 && (
+                    <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-card to-transparent" />
+                  )}
                 </div>
+                {selectedDoc.full_text && selectedDoc.full_text.length > 280 && (
+                  <Button 
+                    variant="link" 
+                    size="sm" 
+                    className="mt-2 p-0"
+                    onClick={() => setShowFullText(
+                      showFullText === selectedDoc.id ? null : selectedDoc.id
+                    )}
+                  >
+                    {showFullText === selectedDoc.id ? 'Show less' : 'Show full document'}
+                  </Button>
+                )}
               </div>
 
               <Separator />

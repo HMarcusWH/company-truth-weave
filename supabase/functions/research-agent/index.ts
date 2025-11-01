@@ -184,12 +184,15 @@ serve(async (req) => {
     // Step 3: Render prompt with variables
     const inputVars = { document_text: documentText };
     const systemPrompt = promptVersion.content_text || 
-      `You are an expert at extracting structured company intelligence from documents. Extract:
+      `You are an expert at extracting structured company intelligence from documents.
+
+CRITICAL: You MUST use the extract_entities function to return your response.
+Do NOT provide a text response. ALWAYS call the extract_entities function with the structured data.
+
+Extract:
 1. Entity mentions (company names, people, locations)
 2. Relationships (CEO, parent company, subsidiary)
-3. Facts with evidence and confidence scores (0.0-1.0)
-
-Use the extract_entities function to return structured data.`;
+3. Facts with evidence and confidence scores (0.0-1.0)`;
 
     // Step 4: Fetch API version from model config
     const { data: modelConfig } = await supabase
@@ -287,7 +290,41 @@ Use the extract_entities function to return structured data.`;
 
     // Extract function call result
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
-    const extractedData = toolCall ? JSON.parse(toolCall.function.arguments) : { entities: [], facts: [] };
+    let extractedData = { entities: [], facts: [] };
+    
+    if (toolCall) {
+      extractedData = JSON.parse(toolCall.function.arguments);
+    } else {
+      // Fallback: try parsing from text content
+      const textContent = aiData.choices?.[0]?.message?.content;
+      console.error('No tool call found. Text response:', textContent);
+      
+      if (textContent) {
+        try {
+          extractedData = JSON.parse(textContent);
+          console.log('Recovered data from text response');
+        } catch {
+          // Update run to error and return
+          await supabase
+            .from('runs')
+            .update({ 
+              status_code: 'error', 
+              ended_at: new Date().toISOString(),
+              metrics_json: { error: 'AI model did not use required function', text_response: textContent }
+            })
+            .eq('run_id', run.run_id);
+          
+          return new Response(
+            JSON.stringify({ 
+              error: 'No tool call in response',
+              hint: 'AI model provided text instead of function call. Check prompt or model settings.',
+              text_response: textContent
+            }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+    }
 
     // Step 5: Create node_run record
     const { data: nodeRun, error: nodeRunError } = await supabase

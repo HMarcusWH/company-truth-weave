@@ -103,7 +103,10 @@ export default function AddDocumentForm({ onUploaded }: Props) {
       });
       if (fnError) throw fnError;
 
-      toast({ title: "Document uploaded", description: "Pipeline started." });
+      toast({ 
+        title: "Document uploaded successfully", 
+        description: "Processing will complete in 30-60 seconds. Check the Monitor tab for progress."
+      });
       onUploaded?.(doc.id);
       setTitle(""); setFullText(""); setPublishedDate("");
       setDocType("press_release"); setEntityId("");
