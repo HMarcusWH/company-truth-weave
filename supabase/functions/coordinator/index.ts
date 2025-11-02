@@ -513,38 +513,12 @@ serve(async (req) => {
       );
     }
 
-    // Step 2: Single-run guard using DB-level partial unique index
-    // The index (ux_single_running_run) ensures only one row with status_code='running' exists
-    // If another run is active, the insert will fail with code 23505 and we return 429
-    const { data: runData, error: runError } = await supabase
-      .from('runs')
-      .insert({
-        env_code: environment,
-        status_code: 'running'
-      })
-      .select()
-      .single();
-
-    if (runError || !runData) {
-      const code = (runError as any)?.code || (runError as any)?.details || '';
-      const msg = (runError as any)?.message || '';
-      if (String(code).includes('23505') || msg.toLowerCase().includes('unique')) {
-        return new Response(
-          JSON.stringify({ error: 'Another run is already in progress. Try again shortly.' }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      console.error('Error creating run:', runError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to create run record' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const runId = runData.run_id;
+    const lockKey = await computeAdvisoryLockKey(documentId);
+    let lockHeld = false;
+    let runId: string | null = null;
     const stepsCompleted: string[] = [];
-    const errors: Array<{ 
-      step: string; 
+    const errors: Array<{
+      step: string;
       message: string;
       error_code?: string;
       error_details?: string;
@@ -585,6 +559,42 @@ serve(async (req) => {
     }
 
     try {
+      const { data: runData, error: runError } = await supabase
+        .from('runs')
+        .insert({
+          env_code: environment,
+          status_code: 'running'
+        })
+        .select()
+        .single();
+
+      if (runError || !runData) {
+        console.error('Error creating run:', runError);
+        errors.push({ step: 'run-init', message: runError?.message || 'Failed to create run record' });
+        finalStatus = 'error';
+        return new Response(
+          JSON.stringify({ error: 'Failed to create run record' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      runId = runData.run_id;
+
+      const { data: documentRecord, error: documentError } = await supabase
+        .from('documents')
+        .select('id, source_url')
+        .eq('id', documentId)
+        .single();
+
+      if (documentError || !documentRecord) {
+        errors.push({ step: 'document-fetch', message: 'Document not found' });
+        finalStatus = 'error';
+        return new Response(
+          JSON.stringify({ error: 'Document not found for ingestion' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       // ====== PIPELINE EXECUTION ======
 
       // Step 2.5: Chunk document and store with embeddings
@@ -832,29 +842,47 @@ serve(async (req) => {
       console.error('Fatal error in coordinator pipeline:', error);
       errors.push({ step: 'fatal', message: error.message });
       finalStatus = 'error';
+      return new Response(
+        JSON.stringify({ error: error.message || 'Coordinator pipeline failed' }),
+        { status: error.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     } finally {
-      // ALWAYS update run status, even if pipeline crashed
       const totalLatency = Date.now() - startTime;
-      await supabase
-        .from('runs')
-        .update({
-          status_code: finalStatus,
-          ended_at: new Date().toISOString(),
-          metrics_json: {
-            workflow_status: finalStatus,
-            steps_completed: stepsCompleted,
-            total_latency_ms: totalLatency,
-            agent_calls: agentCallCount,
-            entities_extracted: researchResult?.entities?.length || 0,
-            facts_extracted: researchResult?.facts?.length || 0,
-            entities_stored: entitiesStored,
-            facts_stored: factsStored,
-            arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
-            errors_count: errors.length,
-            errors: errors.length > 0 ? errors : undefined
-          }
-        })
-        .eq('run_id', runId);
+      if (runId) {
+        try {
+          await supabase
+            .from('runs')
+            .update({
+              status_code: finalStatus,
+              ended_at: new Date().toISOString(),
+              metrics_json: {
+                workflow_status: finalStatus,
+                steps_completed: stepsCompleted,
+                total_latency_ms: totalLatency,
+                agent_calls: agentCallCount,
+                entities_extracted: researchResult?.entities?.length || 0,
+                facts_extracted: researchResult?.facts?.length || 0,
+                entities_stored: entitiesStored,
+                facts_stored: factsStored,
+                arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
+                errors_count: errors.length,
+                errors: errors.length > 0 ? errors : undefined
+              }
+            })
+            .eq('run_id', runId);
+        } catch (updateError) {
+          console.error('Failed to update run status:', updateError);
+        }
+      }
+
+      await releaseLock();
+    }
+
+    if (!runId) {
+      return new Response(
+        JSON.stringify({ error: 'Coordinator initialization failed' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     return new Response(
