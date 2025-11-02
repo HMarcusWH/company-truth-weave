@@ -668,6 +668,7 @@ export type Database = {
       }
       facts: {
         Row: {
+          as_of: string | null
           confidence: number | null
           created_at: string
           created_by: string | null
@@ -692,6 +693,7 @@ export type Database = {
           value_pct: number | null
         }
         Insert: {
+          as_of?: string | null
           confidence?: number | null
           created_at?: string
           created_by?: string | null
@@ -716,6 +718,7 @@ export type Database = {
           value_pct?: number | null
         }
         Update: {
+          as_of?: string | null
           confidence?: number | null
           created_at?: string
           created_by?: string | null

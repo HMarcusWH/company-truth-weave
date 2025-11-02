@@ -301,7 +301,7 @@ function calculateFactConfidence(
  * Extracts subject-predicate-object triples from nested JSON structures,
  * enriches provenance, and normalizes confidence scores.
  */
-function transformNormalizedFacts(facts: any[] = [], options: FactTransformOptions) {
+function transformNormalizedFacts(facts: any[] = [], options: FactTransformOptions & { asOfDate?: string }) {
   const validation = options.criticResult?.validation;
   const criticIssues = buildCriticIssueIndex(validation);
 
@@ -380,6 +380,7 @@ function transformNormalizedFacts(facts: any[] = [], options: FactTransformOptio
         object,
         ...typedValues,
         value_entity_id: valueEntityId ?? null,
+        as_of: options.asOfDate || new Date().toISOString().split('T')[0],
         evidence_text: evidenceText,
         evidence_doc_id: evidenceDocId,
         evidence_url: evidenceUrl,
@@ -534,7 +535,7 @@ serve(async (req) => {
 
     const { data: documentRecord, error: documentError } = await supabase
       .from('documents')
-      .select('id, source_url')
+      .select('id, source_url, published_date, title, created_at')
       .eq('id', documentId)
       .single();
 
@@ -750,17 +751,14 @@ serve(async (req) => {
       if (resolverResult?.normalized?.normalized_entities && resolverResult.normalized.normalized_entities.length > 0) {
         const entitiesToStore = resolverResult.normalized.normalized_entities;
         
-        console.log(`Processing ${entitiesToStore.length} entities for storage`);
+        console.log(`Processing ${entitiesToStore.length} entities for upsert (deduplication enabled)`);
         
         const entityRows = entitiesToStore.map((e: any) => {
-          // Preserve entity_type: use from resolver, fallback to original_entity_type, default to 'company'
           const entityType = e.entity_type || e.original_entity_type || 'company';
-          
-          console.log(`Entity: ${e.canonical_name || e.original_name} - Type: ${entityType}`);
           
           return {
             legal_name: e.canonical_name || e.original_name,
-            entity_type: entityType,  // Phase 1: Preserve original entity type
+            entity_type: entityType,
             identifiers: e.derived?.identifiers || {},
             trading_names: e.original_name !== e.canonical_name ? [e.original_name] : [],
             addresses: e.derived?.addresses || [],
@@ -776,19 +774,114 @@ serve(async (req) => {
           };
         });
         
-        const { data: insertedEntities, error: entityError } = await supabase
-          .from('entities')
-          .insert(entityRows)
-          .select('id');
-        
-        if (!entityError && insertedEntities) {
-          entitiesStored = insertedEntities.length;
-          console.log(`✅ Stored ${entitiesStored} entities after resolver`);
-        } else if (entityError) {
-          console.error('❌ Error storing entities:', entityError);
-          errors.push({ step: 'entity-storage', message: entityError.message });
+        // Upsert entities with deduplication logic
+        const upsertedEntityIds: string[] = [];
+
+        for (const entityRow of entityRows) {
+          // Check for existing entity (case-insensitive on legal_name + entity_type)
+          const { data: existing, error: findErr } = await supabase
+            .from('entities')
+            .select('id, identifiers, trading_names, metadata, website')
+            .ilike('legal_name', entityRow.legal_name)
+            .eq('entity_type', entityRow.entity_type)
+            .limit(1)
+            .maybeSingle();
+
+          if (findErr) {
+            console.error(`Error checking for duplicate entity ${entityRow.legal_name}:`, findErr);
+            continue;
+          }
+
+          if (existing) {
+            // Entity exists - update metadata and merge identifiers/trading names
+            console.log(`Entity "${entityRow.legal_name}" exists (id: ${existing.id}) - updating`);
+            
+            const mergedIdentifiers = { ...existing.identifiers, ...entityRow.identifiers };
+            const mergedTradingNames = Array.from(new Set([
+              ...(existing.trading_names || []),
+              ...(entityRow.trading_names || [])
+            ]));
+            const mergedMetadata = {
+              ...existing.metadata,
+              ...entityRow.metadata,
+              last_updated_by_run: runId,
+              last_updated_at: new Date().toISOString(),
+              source_documents: Array.from(new Set([
+                ...(existing.metadata?.source_documents || []),
+                documentId
+              ]))
+            };
+
+            const { error: updateErr } = await supabase
+              .from('entities')
+              .update({
+                identifiers: mergedIdentifiers,
+                trading_names: mergedTradingNames,
+                metadata: mergedMetadata,
+                website: entityRow.website || existing.website,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existing.id);
+
+            if (updateErr) {
+              console.error(`Error updating entity ${existing.id}:`, updateErr);
+            } else {
+              upsertedEntityIds.push(existing.id);
+              console.log(`✅ Updated existing entity: ${entityRow.legal_name}`);
+            }
+          } else {
+            // Entity does not exist - insert new
+            console.log(`Entity "${entityRow.legal_name}" is new - inserting`);
+            
+            const { data: inserted, error: insertErr } = await supabase
+              .from('entities')
+              .insert([{
+                ...entityRow,
+                metadata: {
+                  ...entityRow.metadata,
+                  source_documents: [documentId]
+                }
+              }])
+              .select('id')
+              .single();
+
+            if (insertErr) {
+              console.error(`Error inserting entity ${entityRow.legal_name}:`, insertErr);
+            } else if (inserted) {
+              upsertedEntityIds.push(inserted.id);
+              console.log(`✅ Inserted new entity: ${entityRow.legal_name}`);
+            }
+          }
+        }
+
+        entitiesStored = upsertedEntityIds.length;
+        console.log(`✅ Upserted ${entitiesStored} entities (deduplicated)`);
+      }
+
+      // Extract as_of date from document for time provenance
+      let documentAsOfDate: string | null = null;
+
+      // Try document published_date field
+      if (documentRecord?.published_date) {
+        documentAsOfDate = documentRecord.published_date;
+      }
+
+      // Try parsing ISO date from document title (e.g., "2024-07-04")
+      if (!documentAsOfDate && documentRecord?.title) {
+        const isoDateMatch = documentRecord.title.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+        if (isoDateMatch) {
+          documentAsOfDate = isoDateMatch[1];
         }
       }
+
+      // Fallback: use document creation date
+      if (!documentAsOfDate) {
+        documentAsOfDate = documentRecord?.created_at ? 
+          new Date(documentRecord.created_at).toISOString().split('T')[0] : 
+          new Date().toISOString().split('T')[0];
+      }
+
+      console.log(`Document as_of date: ${documentAsOfDate}`);
 
       // Step 8: Store facts (only if arbiter approved)
       
@@ -800,12 +893,51 @@ serve(async (req) => {
           documentText,
           fallbackSourceUrl: documentRecord?.source_url ?? null,
           criticResult,
-          arbiterResult
+          arbiterResult,
+          asOfDate: documentAsOfDate
         });
 
         if (factRows.length === 0) {
           console.log('No well-formed facts available after normalization; skipping insert.');
         } else {
+          // Before inserting new facts, mark older facts with same subject+predicate as superseded
+          let factsSuperseded = 0;
+          
+          for (const newFact of factRows) {
+            const { data: oldFacts, error: findErr } = await supabase
+              .from('facts')
+              .select('id, as_of')
+              .eq('subject', newFact.subject)
+              .eq('predicate', newFact.predicate)
+              .in('status', ['pending', 'verified'])
+              .lt('as_of', newFact.as_of || new Date().toISOString().split('T')[0])
+              .order('as_of', { ascending: false });
+
+            if (!findErr && oldFacts && oldFacts.length > 0) {
+              const oldFactIds = oldFacts.map(f => f.id);
+              console.log(`Superseding ${oldFactIds.length} older facts for ${newFact.subject} -> ${newFact.predicate}`);
+              
+              const { error: updateErr } = await supabase
+                .from('facts')
+                .update({ 
+                  status: 'superseded',
+                  updated_at: new Date().toISOString()
+                })
+                .in('id', oldFactIds);
+
+              if (updateErr) {
+                console.error('Error superseding old facts:', updateErr);
+              } else {
+                factsSuperseded += oldFactIds.length;
+              }
+            }
+          }
+
+          if (factsSuperseded > 0) {
+            console.log(`✅ Superseded ${factsSuperseded} older facts`);
+          }
+
+          // Now insert new facts
           const { data: insertedFacts, error: factError } = await supabase
             .from('facts')
             .insert(factRows)
@@ -813,7 +945,7 @@ serve(async (req) => {
 
           if (!factError && insertedFacts) {
             factsStored = insertedFacts.length;
-            console.log(`Stored ${factsStored} facts after arbiter approval`);
+            console.log(`✅ Stored ${factsStored} new facts (as_of: ${documentAsOfDate})`);
           } else if (factError) {
             console.error('Error storing facts:', factError);
             errors.push({ step: 'fact-storage', message: factError.message });
