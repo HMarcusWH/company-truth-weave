@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/use-toast";
 
@@ -18,6 +19,7 @@ type Fact = {
   status: string;
   evidence_doc?: string;
   evidence_snippet?: string;
+  evidence_url?: string;
   created_at: string;
 };
 
@@ -32,7 +34,7 @@ export const FactsBrowser = () => {
       // Try with explicit FK first
       let { data, error } = await (supabase as any)
         .from('facts')
-        .select('id, subject, predicate, object, confidence, status, created_at, evidence_text, documents!fk_facts_evidence_doc(title, full_text)')
+        .select('id, subject, predicate, object, confidence, status, created_at, evidence_text, evidence_url, documents!fk_facts_evidence_doc(title, full_text, source_url)')
         .order('created_at', { ascending: false })
         .limit(100);
       
@@ -40,7 +42,7 @@ export const FactsBrowser = () => {
       if (error && error.message.includes('more than one relationship')) {
         const fallback = await (supabase as any)
           .from('facts')
-          .select('id, subject, predicate, object, confidence, status, created_at, evidence_text')
+          .select('id, subject, predicate, object, confidence, status, created_at, evidence_text, evidence_url')
           .order('created_at', { ascending: false })
           .limit(100);
         data = fallback.data;
@@ -61,6 +63,7 @@ export const FactsBrowser = () => {
         status: f.status,
         evidence_doc: f.documents?.title,
         evidence_snippet: f.evidence_text || (f.documents?.full_text ? f.documents.full_text.slice(0, 160) + '…' : undefined),
+        evidence_url: f.evidence_url || f.documents?.source_url || undefined,
         created_at: f.created_at,
       }));
       setFacts(mapped);
@@ -206,11 +209,24 @@ export const FactsBrowser = () => {
                 <div className="space-y-3">
                   <div className="p-3 bg-muted/50 rounded-lg">
                     <span className="text-xs font-medium text-muted-foreground">Source Document</span>
-                    <p className="text-sm font-medium">
-                      {selectedFact.evidence_doc ?? (
-                        <span className="text-muted-foreground italic">No source document linked</span>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm font-medium">
+                        {selectedFact.evidence_doc ?? (
+                          <span className="text-muted-foreground italic">No source document linked</span>
+                        )}
+                      </p>
+                      {selectedFact.evidence_url && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="p-0 h-auto self-start"
+                          onClick={() => window.open(selectedFact.evidence_url!, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink className="h-3 w-3 mr-1" />
+                          View source
+                        </Button>
                       )}
-                    </p>
+                    </div>
                   </div>
                   <div className="p-3 bg-accent/20 border border-accent rounded-lg">
                     <span className="text-xs font-medium text-muted-foreground mb-2 block">
