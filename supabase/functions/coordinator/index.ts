@@ -724,15 +724,22 @@ serve(async (req) => {
       }
 
       // Step 7: Store entities (after resolver, before arbiter)
+      // PHASE 1 FIX: Preserve entity_type from research-agent through resolver
       
       if (resolverResult?.normalized?.normalized_entities && resolverResult.normalized.normalized_entities.length > 0) {
         const entitiesToStore = resolverResult.normalized.normalized_entities;
         
-        const { data: insertedEntities, error: entityError } = await supabase
-          .from('entities')
-          .insert(entitiesToStore.map((e: any) => ({
+        console.log(`Processing ${entitiesToStore.length} entities for storage`);
+        
+        const entityRows = entitiesToStore.map((e: any) => {
+          // Preserve entity_type: use from resolver, fallback to original_entity_type, default to 'company'
+          const entityType = e.entity_type || e.original_entity_type || 'company';
+          
+          console.log(`Entity: ${e.canonical_name || e.original_name} - Type: ${entityType}`);
+          
+          return {
             legal_name: e.canonical_name || e.original_name,
-            entity_type: e.entity_type,
+            entity_type: entityType,  // Phase 1: Preserve original entity type
             identifiers: e.derived?.identifiers || {},
             trading_names: e.original_name !== e.canonical_name ? [e.original_name] : [],
             addresses: e.derived?.addresses || [],
@@ -742,16 +749,22 @@ serve(async (req) => {
               source: 'coordinator', 
               document_id: documentId,
               run_id: runId,
-              original_name: e.original_name
+              original_name: e.original_name,
+              original_entity_type: e.entity_type || e.original_entity_type
             }
-          })))
+          };
+        });
+        
+        const { data: insertedEntities, error: entityError } = await supabase
+          .from('entities')
+          .insert(entityRows)
           .select('id');
         
         if (!entityError && insertedEntities) {
           entitiesStored = insertedEntities.length;
-          console.log(`Stored ${entitiesStored} entities after resolver`);
+          console.log(`✅ Stored ${entitiesStored} entities after resolver`);
         } else if (entityError) {
-          console.error('Error storing entities:', entityError);
+          console.error('❌ Error storing entities:', entityError);
           errors.push({ step: 'entity-storage', message: entityError.message });
         }
       }
