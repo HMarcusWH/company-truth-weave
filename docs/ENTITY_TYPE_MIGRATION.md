@@ -11,17 +11,22 @@ Migrate from hardcoded `entity_type` enum to flexible taxonomy-backed entity cla
 
 ### Status: ✅ COMPLETE
 
-### Changes Required:
+### Changes Implemented:
 
-**1.1: Fix Coordinator's Entity Mapping Bug**
-- **File:** `supabase/functions/coordinator/index.ts` (lines ~750-780)
-- **Root Cause:** Coordinator hardcodes `entity_type: "other"` instead of preserving research-agent's output
-- **Fix:** Use `entity.entity_type` directly from research-agent response
+**1A: Fix Coordinator's Entity Mapping Bug**
+- **File:** `supabase/functions/coordinator/index.ts` (lines ~726-757)
+- **Root Cause:** Coordinator hardcodes `entity_type: "other"` instead of preserving resolver-agent's output
+- **Fix:** Use `entity.entity_type` directly from resolver-agent response with fallback to 'company'
 - **No schema change needed** - purely a code bug
 
-**1.2: Verify Research-Agent Output**
-- Confirm research-agent extracts valid types: `company`, `person`, `product`, `location`, `event`
-- These map correctly to current enum
+**1B: Fix Resolver-Agent Entity Type Preservation**
+- **File:** `supabase/functions/resolver-agent/index.ts` (lines ~185-211)
+- **Root Cause:** Resolver-agent was transforming `entity_type: "event"` to `entity_type: "other"` during normalization
+- **Fix:** 
+  - Removed "other" from entity_type enum, added "event"
+  - Enhanced system prompt to explicitly instruct preservation of entity_type values
+  - Added description to tool schema: "MUST be preserved exactly as received"
+- **No schema change needed** - purely a code/prompt bug
 
 ### Expected Result:
 - ✅ BrightBid press release → 10 entities stored with correct types

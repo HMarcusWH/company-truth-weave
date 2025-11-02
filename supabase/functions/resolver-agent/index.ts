@@ -183,10 +183,16 @@ serve(async (req) => {
         : `google/${agentData.preferred_model_family}`;
 
     const aiStartTime = Date.now();
+    
+    // Enhanced system instructions for entity type preservation
+    const enhancedSystemPrompt = `${systemPrompt}
+
+CRITICAL: When normalizing entities, you MUST preserve the exact entity_type value from the research-agent output. The entity_type field must be one of: company, person, product, location, event. Do NOT transform or change entity types during normalization. If an entity has entity_type "event", keep it as "event" in your normalized output.`;
+    
     const aiResponse = await callAI(supabaseUrl, supabaseKey, {
       model: modelName,
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: enhancedSystemPrompt },
         { role: 'user', content: inputData }
       ],
       tools: [{
@@ -206,7 +212,8 @@ serve(async (req) => {
                     canonical_name: { type: 'string' },
                     entity_type: { 
                       type: 'string',
-                      enum: ['company', 'person', 'product', 'location', 'other']
+                      enum: ['company', 'person', 'product', 'location', 'event'],
+                      description: 'Entity type from research-agent. MUST be preserved exactly as received. Valid values: company, person, product, location, event. Never transform or change this value during normalization.'
                     },
                     derived: { type: 'object' }
                   },
@@ -278,8 +285,8 @@ serve(async (req) => {
         agent_id: agentData.agent_id,
         prompt_version_id: bindingData.prompt_version_id,
         node_id: 'resolver-agent',
-        rendered_prompt_text: systemPrompt,
-        input_vars_json: { 
+        rendered_prompt_text: enhancedSystemPrompt,
+        input_vars_json: {
           entitiesCount: entities?.length || 0, 
           factsCount: facts?.length || 0 
         },
@@ -301,7 +308,7 @@ serve(async (req) => {
         {
           node_run_id: nodeRunData.node_run_id,
           role_code: 'system',
-          content_text: systemPrompt
+          content_text: enhancedSystemPrompt
         },
         {
           node_run_id: nodeRunData.node_run_id,
