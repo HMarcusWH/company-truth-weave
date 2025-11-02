@@ -184,10 +184,26 @@ serve(async (req) => {
 
     const aiStartTime = Date.now();
     
-    // Enhanced system instructions for entity type preservation
+    // Enhanced system instructions for entity type preservation and triple extraction
     const enhancedSystemPrompt = `${systemPrompt}
 
-CRITICAL: When normalizing entities, you MUST preserve the exact entity_type value from the research-agent output. The entity_type field must be one of: company, person, product, location, event. Do NOT transform or change entity types during normalization. If an entity has entity_type "event", keep it as "event" in your normalized output.`;
+CRITICAL INSTRUCTIONS:
+
+1. ENTITY TYPE PRESERVATION: When normalizing entities, you MUST preserve the exact entity_type value from the research-agent output. The entity_type field must be one of: company, person, product, location, event. Do NOT transform or change entity types during normalization. If an entity has entity_type "event", keep it as "event" in your normalized output.
+
+2. FACT TRIPLE EXTRACTION: For every fact, you MUST extract a structured triple in the derived.triple field:
+   - subject: The main entity (e.g., "BrightBid Group AB (publ)", "Annual General Meeting")
+   - predicate: The relationship or attribute (e.g., "changed_name_to", "scheduled_date", "has_revenue")
+   - object: The value, target entity, or description (e.g., "BrightBid AB", "2024-07-04", "SEK 42.7M")
+
+3. TRIPLE EXAMPLES:
+   - "BrightBid Group AB changed its name to BrightBid AB" → subject: "BrightBid Group AB (publ)", predicate: "changed_name_to", object: "BrightBid AB"
+   - "The AGM is scheduled for July 4, 2024" → subject: "Annual General Meeting", predicate: "scheduled_date", object: "2024-07-04"
+   - "Revenue was SEK 42.7M in Q3 2024" → subject: "BrightBid Group AB (publ)", predicate: "revenue_q3_2024", object: "42700000"
+
+4. PREDICATE NAMING: Use snake_case for predicates. Be specific and descriptive. Include temporal context in predicate if relevant (e.g., "revenue_q3_2024" not just "revenue").
+
+5. EVIDENCE: Include evidence text and span from the original fact for each triple.`;
     
     const aiResponse = await callAI(supabaseUrl, supabaseKey, {
       model: modelName,
@@ -199,7 +215,7 @@ CRITICAL: When normalizing entities, you MUST preserve the exact entity_type val
         type: 'function',
         function: {
           name: 'normalize_data',
-          description: 'Normalize entities and facts to canonical forms and schemas',
+          description: 'Normalize entities and facts to canonical forms and schemas with structured triple extraction',
           parameters: {
             type: 'object',
             properties: {
@@ -228,9 +244,47 @@ CRITICAL: When normalizing entities, you MUST preserve the exact entity_type val
                     original_statement: { type: 'string' },
                     normalized_statement: { type: 'string' },
                     confidence_numeric: { type: 'number', minimum: 0, maximum: 1 },
-                    derived: { type: 'object' }
+                    derived: { 
+                      type: 'object',
+                      properties: {
+                        triple: {
+                          type: 'object',
+                          properties: {
+                            subject: { 
+                              type: 'string',
+                              description: 'The main entity or subject of the fact (e.g., "BrightBid Group AB (publ)", "Annual General Meeting")'
+                            },
+                            predicate: { 
+                              type: 'string',
+                              description: 'The relationship or attribute in snake_case (e.g., "changed_name_to", "scheduled_date", "revenue_q3_2024")'
+                            },
+                            object: { 
+                              type: 'string',
+                              description: 'The value, target entity, or description (e.g., "BrightBid AB", "2024-07-04", "42700000")'
+                            }
+                          },
+                          required: ['subject', 'predicate', 'object'],
+                          description: 'Structured subject-predicate-object triple extracted from the fact'
+                        },
+                        confidence: { type: 'number', minimum: 0, maximum: 1 },
+                        evidence: {
+                          type: 'object',
+                          properties: {
+                            text: { type: 'string' },
+                            span: {
+                              type: 'object',
+                              properties: {
+                                start: { type: 'integer' },
+                                end: { type: 'integer' }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      required: ['triple']
+                    }
                   },
-                  required: ['original_statement', 'normalized_statement', 'confidence_numeric']
+                  required: ['original_statement', 'normalized_statement', 'confidence_numeric', 'derived']
                 }
               },
               unknown_values: {
