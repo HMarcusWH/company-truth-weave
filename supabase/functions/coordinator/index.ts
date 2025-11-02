@@ -537,19 +537,6 @@ serve(async (req) => {
       .single();
 
     if (documentError || !documentRecord) {
-      await supabase
-        .from('runs')
-        .update({
-          status_code: 'error',
-          ended_at: new Date().toISOString(),
-          metrics_json: {
-            workflow_status: 'error',
-            error: 'Document not found',
-            document_id: documentId
-          }
-        })
-        .eq('run_id', runId);
-
       return new Response(
         JSON.stringify({ error: 'Document not found for ingestion' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -638,7 +625,8 @@ serve(async (req) => {
             invokeAgentWithAuth(supabase, 'resolver-agent', {
               entities: researchResult.entities || [],
               facts: researchResult.facts || [],
-              environment
+              environment,
+              runId
             }, authHeader)
           );
 
@@ -676,7 +664,7 @@ serve(async (req) => {
             : (researchResult?.facts || []);
 
           const criticResponse = await retryWithBackoff(() =>
-            invokeAgentWithAuth(supabase, 'critic-agent', { documentId, environment, facts: criticFacts }, authHeader)
+            invokeAgentWithAuth(supabase, 'critic-agent', { documentId, environment, facts: criticFacts, runId }, authHeader)
           );
 
           if (criticResponse.error) {
@@ -701,7 +689,8 @@ serve(async (req) => {
             invokeAgentWithAuth(supabase, 'arbiter-agent', {
               facts: researchResult.facts || [],
               entities: researchResult.entities || [],
-              environment
+              environment,
+              runId
             }, authHeader)
           );
 
@@ -817,11 +806,6 @@ serve(async (req) => {
           step: 'coordinator', 
           message: `Budget exceeded: ${agentCallCount}/${MAX_AGENT_CALLS} calls, ${totalLatency}ms/${MAX_LATENCY_MS}ms` 
         });
-      }
-
-      // Determine final status
-      if (errors.length > 0 || !arbiterResult) {
-        finalStatus = stepsCompleted.length > 0 ? 'partial' : 'error';
       }
 
     } catch (error: any) {

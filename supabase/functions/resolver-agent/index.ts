@@ -95,7 +95,14 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { entities, facts, environment = 'dev' } = body;
+    const { entities, facts, environment = 'dev', runId } = body;
+
+    if (!runId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) {
+      return new Response(
+        JSON.stringify({ error: 'runId must be provided and be a valid UUID' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if ((!entities || !Array.isArray(entities)) && (!facts || !Array.isArray(facts))) {
       return new Response(
@@ -157,27 +164,7 @@ serve(async (req) => {
     const promptVersion = bindingData.prompt_versions as any;
     const systemPrompt = promptVersion.content_text;
 
-    // Step 3: Create run record
-    const { data: runData, error: runError } = await supabase
-      .from('runs')
-      .insert({
-        env_code: environment,
-        status_code: 'running'
-      })
-      .select()
-      .single();
-
-    if (runError || !runData) {
-      console.error('Error creating run:', runError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to create run record' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const runId = runData.run_id;
-
-    // Step 4: Fetch API version from model config
+    // Step 3: Fetch API version from model config
     const { data: modelConfig } = await supabase
       .from('model_configurations')
       .select('api_version')
@@ -263,15 +250,6 @@ serve(async (req) => {
       const errorText = await aiResponse.text();
       console.error('AI API error:', aiResponse.status, errorText);
 
-      await supabase
-        .from('runs')
-        .update({
-          status_code: 'error',
-          ended_at: new Date().toISOString(),
-          metrics_json: { error: errorText }
-        })
-        .eq('run_id', runId);
-
       return new Response(
         JSON.stringify({ error: 'AI API request failed', details: errorText }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -284,15 +262,6 @@ serve(async (req) => {
     // Step 5: Parse AI response
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) {
-      await supabase
-        .from('runs')
-        .update({
-          status_code: 'error',
-          ended_at: new Date().toISOString(),
-          metrics_json: { error: 'No tool call in response' }
-        })
-        .eq('run_id', runId);
-
       return new Response(
         JSON.stringify({ error: 'No tool call in AI response' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -363,22 +332,8 @@ serve(async (req) => {
       });
     }
 
-    // Step 9: Update run status
+    // Step 9: Return response
     const totalLatency = Date.now() - startTime;
-    await supabase
-      .from('runs')
-      .update({
-        status_code: 'success',
-        ended_at: new Date().toISOString(),
-        metrics_json: {
-          total_latency_ms: totalLatency,
-          ai_latency_ms: aiLatency,
-          entities_normalized: normalizedData.normalized_entities.length,
-          facts_normalized: normalizedData.normalized_facts.length,
-          unknown_values_count: normalizedData.unknown_values.length
-        }
-      })
-      .eq('run_id', runId);
 
     return new Response(
       JSON.stringify({
