@@ -498,26 +498,7 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    let runId: string | null = null;
-    const stepsCompleted: string[] = [];
-    const errors: Array<{
-      step: string;
-      message: string;
-      error_code?: string;
-      error_details?: string;
-    }> = [];
-    let agentCallCount = 0;
-    let finalStatus = 'success';
-    let entitiesStored = 0;
-    let factsStored = 0;
-    let researchResult: any = null;
-    let resolverResult: any = null;
-    let criticResult: any = null;
-    let arbiterResult: any = null;
-
-    // Wrap entire pipeline in try/finally for guaranteed status updates
-    try {
-      // Step 1: Fetch coordinator agent definition
+    // Step 1: Fetch coordinator agent definition
     const { data: agentData, error: agentError } = await supabase
       .from('agent_definitions')
       .select('agent_id, name')
@@ -838,15 +819,17 @@ serve(async (req) => {
         });
       }
 
+      // Determine final status
+      if (errors.length > 0 || !arbiterResult) {
+        finalStatus = stepsCompleted.length > 0 ? 'partial' : 'error';
+      }
+
     } catch (error: any) {
       console.error('Fatal error in coordinator pipeline:', error);
       errors.push({ step: 'fatal', message: error.message });
       finalStatus = 'error';
-      return new Response(
-        JSON.stringify({ error: error.message || 'Coordinator pipeline failed' }),
-        { status: error.status || 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     } finally {
+      // ALWAYS update run status
       const totalLatency = Date.now() - startTime;
       if (runId) {
         try {
@@ -874,9 +857,9 @@ serve(async (req) => {
           console.error('Failed to update run status:', updateError);
         }
       }
-
     }
 
+    // Return response based on outcome
     if (!runId) {
       return new Response(
         JSON.stringify({ error: 'Coordinator initialization failed' }),
