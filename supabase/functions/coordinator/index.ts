@@ -659,9 +659,9 @@ serve(async (req) => {
         console.log('Step 3: Calling critic-agent...');
         try {
           agentCallCount++;
-          const criticFacts = resolverResult?.normalized?.normalized_facts?.length
-            ? resolverResult.normalized.normalized_facts
-            : (researchResult?.facts || []);
+          // Critic validates ORIGINAL facts (needs evidence_span)
+          // Storage uses NORMALIZED facts (from resolver)
+          const criticFacts = researchResult?.facts || [];
 
           const criticResponse = await retryWithBackoff(() =>
             invokeAgentWithAuth(supabase, 'critic-agent', { documentId, environment, facts: criticFacts, runId }, authHeader)
