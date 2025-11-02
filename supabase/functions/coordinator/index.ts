@@ -156,22 +156,6 @@ type FactTransformOptions = {
   arbiterResult?: any;
 };
 
-async function computeAdvisoryLockKey(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashBytes = new Uint8Array(hashBuffer);
-
-  let key = 0n;
-  for (let i = 0; i < 8 && i < hashBytes.length; i++) {
-    key = (key << 8n) | BigInt(hashBytes[i]);
-  }
-
-  const mask = (1n << 63n) - 1n;
-  const normalized = key & mask;
-  return normalized === 0n ? '1' : normalized.toString();
-}
-
 function normalizeKey(value: any): string | null {
   if (value === null || value === undefined) return null;
   const str = String(value).trim();
@@ -548,36 +532,31 @@ serve(async (req) => {
     let criticResult: any = null;
     let arbiterResult: any = null;
 
-    const releaseLock = async () => {
-      if (!lockHeld) return;
-      try {
-        await supabase.rpc('advisory_unlock', { key: lockKey });
-      } catch (unlockError) {
-        console.error('Failed to release advisory lock:', unlockError);
-      } finally {
-        lockHeld = false;
-      }
-    };
+    const { data: documentRecord, error: documentError } = await supabase
+      .from('documents')
+      .select('id, source_url')
+      .eq('id', documentId)
+      .single();
 
-    const { data: lockData, error: lockError } = await supabase.rpc('try_advisory_lock', { key: lockKey });
-    if (lockError) {
-      console.error('Failed to acquire advisory lock:', lockError);
-      await releaseLock();
+    if (documentError || !documentRecord) {
+      await supabase
+        .from('runs')
+        .update({
+          status_code: 'error',
+          ended_at: new Date().toISOString(),
+          metrics_json: {
+            workflow_status: 'error',
+            error: 'Document not found',
+            document_id: documentId
+          }
+        })
+        .eq('run_id', runId);
+
       return new Response(
-        JSON.stringify({ error: 'Unable to acquire ingestion lock' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Document not found for ingestion' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    if (!lockData) {
-      await releaseLock();
-      return new Response(
-        JSON.stringify({ error: 'Another ingestion is already processing this document' }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    lockHeld = true;
 
     try {
       const { data: runData, error: runError } = await supabase
