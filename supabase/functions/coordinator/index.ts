@@ -64,7 +64,7 @@ async function invokeAgentWithAuth(
 // Budget constraints to prevent runaway costs
 const MAX_RETRIES = 5;        // Maximum retry attempts per agent
 const MAX_AGENT_CALLS = 5;    // Maximum total agent invocations
-const MAX_LATENCY_MS = 60000; // Maximum total pipeline latency (60s)
+const MAX_LATENCY_MS = 180000; // Maximum total pipeline latency (3 minutes)
 
 // Valid fact status values for database storage
 const FACT_STATUS_VALUES = new Set(['pending', 'verified', 'disputed', 'superseded']);
@@ -529,6 +529,8 @@ serve(async (req) => {
     let resolverResult: any = null;
     let criticResult: any = null;
     let arbiterResult: any = null;
+    let wellFormedFacts: any[] = [];
+    let factsFiltered = 0;
 
     const { data: documentRecord, error: documentError } = await supabase
       .from('documents')
@@ -615,6 +617,25 @@ serve(async (req) => {
         }
       }
 
+      // Pre-filter malformed facts before validation
+      
+      if (researchResult?.facts) {
+        const allFacts = researchResult.facts;
+        wellFormedFacts = allFacts.filter((f: any) => 
+          f.statement && 
+          f.evidence && 
+          f.evidence_span?.start !== undefined && 
+          f.evidence_span?.end !== undefined && 
+          f.entity_name
+        );
+        factsFiltered = allFacts.length - wellFormedFacts.length;
+        
+        if (factsFiltered > 0) {
+          console.log(`Filtered ${factsFiltered} malformed facts before critic (missing required fields)`);
+        }
+        console.log(`Passing ${wellFormedFacts.length} well-formed facts to critic and arbiter`);
+      }
+
       // Step 5: Call resolver-agent (if research succeeded)
       
       if (researchResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
@@ -659,9 +680,9 @@ serve(async (req) => {
         console.log('Step 3: Calling critic-agent...');
         try {
           agentCallCount++;
-          // Critic validates ORIGINAL facts (needs evidence_span)
+          // Critic validates ORIGINAL well-formed facts (needs evidence_span)
           // Storage uses NORMALIZED facts (from resolver)
-          const criticFacts = researchResult?.facts || [];
+          const criticFacts = wellFormedFacts;
 
           const criticResponse = await retryWithBackoff(() =>
             invokeAgentWithAuth(supabase, 'critic-agent', { documentId, environment, facts: criticFacts, runId }, authHeader)
@@ -679,15 +700,15 @@ serve(async (req) => {
         }
       }
 
-      // Step 6: Call arbiter-agent (if critic passed)
-      
-      if (criticResult?.validation?.is_valid && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+      // Step 6: Call arbiter-agent (run independently of critic validation)
+      // Critic checks quality, arbiter enforces policy - they're complementary
+      if (criticResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
         console.log('Step 4: Calling arbiter-agent...');
         try {
           agentCallCount++;
           const arbiterResponse = await retryWithBackoff(() =>
             invokeAgentWithAuth(supabase, 'arbiter-agent', {
-              facts: researchResult.facts || [],
+              facts: wellFormedFacts,
               entities: researchResult.entities || [],
               environment,
               runId
@@ -871,10 +892,13 @@ serve(async (req) => {
         status: finalStatus,
         entities_extracted: researchResult?.entities?.length || 0,
         facts_extracted: researchResult?.facts?.length || 0,
+        facts_filtered_before_validation: factsFiltered,
+        facts_validated: wellFormedFacts.length,
         entities_stored: entitiesStored,
         facts_stored: factsStored,
         facts_approved: arbiterResult?.policy?.decision === 'ALLOW' ? factsStored : 0,
-        blocked_by_arbiter: arbiterResult?.policy?.decision === 'BLOCK' ? (researchResult?.facts?.length || 0) : 0,
+        blocked_by_arbiter: arbiterResult?.policy?.decision === 'BLOCK' ? wellFormedFacts.length : 0,
+        arbiter_decision: arbiterResult?.policy?.decision || 'UNKNOWN',
         agents_executed: [
           { agent_name: 'research-agent', status: researchResult ? 'success' : 'failed' },
           { agent_name: 'resolver-agent', status: resolverResult ? 'success' : 'failed' },
