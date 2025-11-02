@@ -94,7 +94,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { documentText, documentId, environment = 'dev' } = body;
+    const { documentText, documentId, environment = 'dev', runId } = body;
     
     if (!documentText || typeof documentText !== 'string' || documentText.length < 20 || documentText.length > 1000000) {
       return new Response(
@@ -108,11 +108,17 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    if (!runId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) {
+      return new Response(
+        JSON.stringify({ error: 'runId must be provided by coordinator and be a valid UUID' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Initialize Supabase client with service role
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Step 1: Fetch active prompt binding for research-agent in this environment
+    // Step 1: Fetch agent definition (runId provided by coordinator)
     const { data: agent, error: agentError } = await supabase
       .from('agent_definitions')
       .select('agent_id, name, model_family_code, max_tokens, preferred_model_family, reasoning_effort')
@@ -158,30 +164,9 @@ serve(async (req) => {
 
     const promptVersion = binding.prompt_versions as any;
     
-    // Step 2: Create run record
-    const { data: run, error: runError } = await supabase
-      .from('runs')
-      .insert({
-        env_code: environment,
-        status_code: 'running',
-        started_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (runError) {
-      console.error('Failed to create run:', runError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to create run record' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    runId = run.run_id;
-
     const startTime = Date.now();
 
-    // Step 3: Render prompt with variables
+    // Step 2: Render prompt with variables
     const inputVars = { document_text: documentText };
     const systemPrompt = promptVersion.content_text || 
       `You are an expert at extracting structured company intelligence from documents.
@@ -194,7 +179,7 @@ Extract:
 2. Relationships (CEO, parent company, subsidiary)
 3. Facts with evidence and confidence scores (0.0-1.0)`;
 
-    // Step 4: Fetch API version from model config
+    // Step 3: Fetch API version from model config
     const { data: modelConfig } = await supabase
       .from('model_configurations')
       .select('api_version')
@@ -203,7 +188,7 @@ Extract:
     
     const apiVersion = modelConfig?.api_version || 'chat_completions';
 
-    // Step 5: Call AI using model-agnostic caller
+    // Step 4: Call AI using model-agnostic caller
     const modelName = apiVersion === 'responses' 
       ? agent.preferred_model_family
       : agent.preferred_model_family.includes('/') 
@@ -272,12 +257,6 @@ Extract:
       const errorText = await aiResponse.text();
       console.error('AI API error:', aiResponse.status, errorText);
       
-      // Update run status to error
-      await supabase
-        .from('runs')
-        .update({ status_code: 'error', ended_at: new Date().toISOString() })
-        .eq('run_id', run.run_id);
-      
       return new Response(
         JSON.stringify({ error: 'AI gateway error', details: errorText }),
         { status: aiResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -285,8 +264,7 @@ Extract:
     }
 
     const aiData = await parseAIResponse(aiResponse, apiVersion);
-    const endTime = Date.now();
-    const latencyMs = endTime - startTime;
+    const latencyMs = Date.now() - startTime;
 
     // Extract function call result
     const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
@@ -304,16 +282,6 @@ Extract:
           extractedData = JSON.parse(textContent);
           console.log('Recovered data from text response');
         } catch {
-          // Update run to error and return
-          await supabase
-            .from('runs')
-            .update({ 
-              status_code: 'error', 
-              ended_at: new Date().toISOString(),
-              metrics_json: { error: 'AI model did not use required function', text_response: textContent }
-            })
-            .eq('run_id', run.run_id);
-          
           return new Response(
             JSON.stringify({ 
               error: 'No tool call in response',
@@ -330,7 +298,7 @@ Extract:
     const { data: nodeRun, error: nodeRunError } = await supabase
       .from('node_runs')
       .insert({
-        run_id: run.run_id,
+        run_id: runId,
         node_id: 'research-agent',
         agent_id: agent.agent_id,
         prompt_version_id: promptVersion.prompt_version_id,
@@ -393,24 +361,11 @@ Extract:
       });
     }
 
-    // Step 8: Update run completion
-    await supabase
-      .from('runs')
-      .update({
-        status_code: 'success',
-        ended_at: new Date().toISOString(),
-        metrics_json: {
-          total_latency_ms: latencyMs,
-          entities_extracted: extractedData.entities?.length || 0,
-          facts_extracted: extractedData.facts?.length || 0
-        }
-      })
-      .eq('run_id', run.run_id);
-
+    // Step 8: Return results (coordinator handles run status updates)
     return new Response(
       JSON.stringify({
         success: true,
-        run_id: run.run_id,
+        run_id: runId,
         node_run_id: nodeRun?.node_run_id,
         entities: extractedData.entities || [],
         facts: extractedData.facts || [],
@@ -426,19 +381,6 @@ Extract:
 
   } catch (error) {
     console.error('Research agent error:', error);
-
-    if (runId) {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL');
-      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-      if (supabaseUrl && supabaseServiceKey) {
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        await supabase
-          .from('runs')
-          .update({ status_code: 'error', ended_at: new Date().toISOString() })
-          .eq('run_id', runId);
-      }
-    }
 
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),

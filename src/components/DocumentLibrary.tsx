@@ -56,12 +56,12 @@ export const DocumentLibrary = () => {
         id: d.id,
         title: d.title,
         doc_type: d.doc_type,
-        entity_id: d.entity_id,
-        entity_name: d.entity_name,
-        published_date: d.published_date,
-        content_preview: d.full_text?.slice(0, 280),
-        full_text: d.full_text,
-        source_url: d.source_url,
+        entity_id: d.entity_id ?? null,
+        entity_name: d.entity_name ?? undefined,
+        published_date: d.published_date ?? undefined,
+        content_preview: d.full_text?.slice(0, 280) ?? undefined,
+        full_text: d.full_text ?? undefined,
+        source_url: d.source_url ?? undefined,
         confidence: d.confidence ?? undefined,
       }));
       setDocs(mapped);

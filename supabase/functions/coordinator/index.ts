@@ -498,7 +498,26 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Step 1: Fetch coordinator agent definition
+    let runId: string | null = null;
+    const stepsCompleted: string[] = [];
+    const errors: Array<{
+      step: string;
+      message: string;
+      error_code?: string;
+      error_details?: string;
+    }> = [];
+    let agentCallCount = 0;
+    let finalStatus = 'success';
+    let entitiesStored = 0;
+    let factsStored = 0;
+    let researchResult: any = null;
+    let resolverResult: any = null;
+    let criticResult: any = null;
+    let arbiterResult: any = null;
+
+    // Wrap entire pipeline in try/finally for guaranteed status updates
+    try {
+      // Step 1: Fetch coordinator agent definition
     const { data: agentData, error: agentError } = await supabase
       .from('agent_definitions')
       .select('agent_id, name')
@@ -513,8 +532,6 @@ serve(async (req) => {
       );
     }
 
-    const lockKey = await computeAdvisoryLockKey(documentId);
-    let lockHeld = false;
     let runId: string | null = null;
     const stepsCompleted: string[] = [];
     const errors: Array<{
@@ -580,25 +597,8 @@ serve(async (req) => {
 
       runId = runData.run_id;
 
-      const { data: documentRecord, error: documentError } = await supabase
-        .from('documents')
-        .select('id, source_url')
-        .eq('id', documentId)
-        .single();
-
-      if (documentError || !documentRecord) {
-        errors.push({ step: 'document-fetch', message: 'Document not found' });
-        finalStatus = 'error';
-        return new Response(
-          JSON.stringify({ error: 'Document not found for ingestion' }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // ====== PIPELINE EXECUTION ======
-
-      // Step 2.5: Chunk document and store with embeddings
-      console.log('Step 2.5: Chunking document...');
+      // Step 3: Chunk document and store
+      console.log('Step 3: Chunking document...');
       const chunks = chunkText(documentText);
       console.log(`Created ${chunks.length} chunks from document`);
 
@@ -625,14 +625,14 @@ serve(async (req) => {
         // Non-fatal error, continue processing
       }
 
-      // Step 3: Call research-agent
-      console.log('Step 1: Calling research-agent...');
+      // Step 4: Call research-agent with runId
+      console.log('Step 4: Calling research-agent...');
       
       if (agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
         try {
           agentCallCount++;
           const researchResponse = await retryWithBackoff(() =>
-            invokeAgentWithAuth(supabase, 'research-agent', { documentText, documentId, environment }, authHeader)
+            invokeAgentWithAuth(supabase, 'research-agent', { documentText, documentId, environment, runId }, authHeader)
           );
 
           if (researchResponse.error) {
@@ -647,7 +647,7 @@ serve(async (req) => {
         }
       }
 
-      // Step 4: Call resolver-agent (if research succeeded)
+      // Step 5: Call resolver-agent (if research succeeded)
       
       if (researchResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
         console.log('Step 2: Calling resolver-agent...');
@@ -875,7 +875,6 @@ serve(async (req) => {
         }
       }
 
-      await releaseLock();
     }
 
     if (!runId) {
