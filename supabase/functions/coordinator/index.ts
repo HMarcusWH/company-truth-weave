@@ -63,7 +63,7 @@ async function invokeAgentWithAuth(
 
 // Budget constraints to prevent runaway costs
 const MAX_RETRIES = 5;        // Maximum retry attempts per agent
-const MAX_AGENT_CALLS = 5;    // Maximum total agent invocations
+const MAX_AGENT_CALLS = 7;    // Maximum total agent invocations
 const MAX_LATENCY_MS = 180000; // Maximum total pipeline latency (3 minutes)
 
 // Valid fact status values for database storage
@@ -360,9 +360,13 @@ function transformNormalizedFacts(facts: any[] = [], options: FactTransformOptio
         criticIssues,
         options.arbiterResult
       );
-      const statusCandidate = typeof derived.status === 'string' && FACT_STATUS_VALUES.has(derived.status)
+let statusCandidate = typeof derived.status === 'string' && FACT_STATUS_VALUES.has(derived.status)
         ? derived.status
         : 'verified';
+
+      if (options.arbiterResult?.policy?.decision === 'WARN' && statusCandidate === 'verified') {
+        statusCandidate = 'pending';
+      }
 
       // Detect typed values
       const typedValues = detectTypedValue(String(object), String(predicate));
@@ -531,7 +535,8 @@ serve(async (req) => {
     let criticResult: any = null;
     let arbiterResult: any = null;
     let wellFormedFacts: any[] = [];
-    let factsFiltered = 0;
+let factsFiltered = 0;
+    let correctionAttempted = false;
 
     const { data: documentRecord, error: documentError } = await supabase
       .from('documents')
@@ -701,8 +706,54 @@ serve(async (req) => {
         }
       }
 
-      // Step 6: Call arbiter-agent (run independently of critic validation)
-      // Critic checks quality, arbiter enforces policy - they're complementary
+      // Step 6: Optional correction loop before arbiter
+      if (criticResult && !correctionAttempted) {
+        const v = criticResult.validation || {};
+        const hasIssues = (v.schema_errors?.length || 0) > 0 || (v.contradictions?.length || 0) > 0 || (v.missing_citations?.length || 0) > 0;
+        if (hasIssues && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+          try {
+            console.log('Critic found issues; sending feedback to resolver-agent for correction...');
+            correctionAttempted = true;
+            agentCallCount++;
+            const feedback = {
+              schema_errors: v.schema_errors || [],
+              contradictions: v.contradictions || [],
+              missing_citations: v.missing_citations || []
+            };
+            const resolverResponse2 = await retryWithBackoff(() =>
+              invokeAgentWithAuth(supabase, 'resolver-agent', {
+                entities: researchResult.entities || [],
+                facts: researchResult.facts || [],
+                environment,
+                runId,
+                feedback
+              }, authHeader)
+            );
+            if (!resolverResponse2.error) {
+              resolverResult = resolverResponse2.data;
+              console.log('Resolver-agent correction completed; re-running critic...');
+              if (agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
+                agentCallCount++;
+                const criticResponse2 = await retryWithBackoff(() =>
+                  invokeAgentWithAuth(supabase, 'critic-agent', { documentId, environment, facts: wellFormedFacts, runId }, authHeader)
+                );
+                if (!criticResponse2.error) {
+                  criticResult = criticResponse2.data;
+                } else {
+                  errors.push({ step: 'critic-correction', message: criticResponse2.error.message });
+                }
+              }
+            } else {
+              errors.push({ step: 'resolver-correction', message: resolverResponse2.error.message });
+            }
+          } catch (e: any) {
+            console.error('Correction loop failed:', e);
+            errors.push({ step: 'correction-loop', message: e.message });
+          }
+        }
+      }
+
+      // Step 7: Call arbiter-agent after corrections
       if (criticResult && agentCallCount < MAX_AGENT_CALLS && (Date.now() - startTime) < MAX_LATENCY_MS) {
         console.log('Step 4: Calling arbiter-agent...');
         try {
@@ -723,25 +774,15 @@ serve(async (req) => {
             stepsCompleted.push('arbiter');
             console.log('Arbiter-agent completed successfully');
             console.log('Arbiter decision:', arbiterResult?.policy?.decision);
-            
-            // Validate arbiter response structure
             if (!arbiterResult?.policy || !arbiterResult?.policy?.decision) {
               console.error('Invalid arbiter response structure:', arbiterResult);
-              errors.push({ 
-                step: 'arbiter', 
-                message: 'Arbiter returned malformed response: missing policy.decision' 
-              });
+              errors.push({ step: 'arbiter', message: 'Arbiter returned malformed response: missing policy.decision' });
             }
           }
         } catch (error: any) {
           console.error('Arbiter-agent failed:', error);
           console.error('Error stack:', error.stack);
-          errors.push({ 
-            step: 'arbiter', 
-            message: error.message,
-            error_code: error.code,
-            error_details: error.toString()
-          });
+          errors.push({ step: 'arbiter', message: error.message, error_code: error.code, error_details: error.toString() });
         }
       }
 
@@ -886,7 +927,8 @@ serve(async (req) => {
       // Step 8: Store facts (only if arbiter approved)
       
       console.log('Arbiter decision:', arbiterResult?.policy?.decision);
-      if (arbiterResult?.policy?.decision === 'ALLOW' && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
+      const arbiterDecision = arbiterResult?.policy?.decision;
+      if ((arbiterDecision === 'ALLOW' || arbiterDecision === 'WARN') && resolverResult?.normalized?.normalized_facts && resolverResult.normalized.normalized_facts.length > 0) {
         const factsToStore = resolverResult.normalized.normalized_facts;
         const factRows = transformNormalizedFacts(factsToStore, {
           documentId,
@@ -945,16 +987,15 @@ serve(async (req) => {
 
           if (!factError && insertedFacts) {
             factsStored = insertedFacts.length;
-            console.log(`✅ Stored ${factsStored} new facts (as_of: ${documentAsOfDate})`);
+            const warnNote = arbiterDecision === 'WARN' ? ' with WARN status (stored as pending)' : '';
+            console.log(`✅ Stored ${factsStored} new facts (as_of: ${documentAsOfDate})${warnNote}`);
           } else if (factError) {
             console.error('Error storing facts:', factError);
             errors.push({ step: 'fact-storage', message: factError.message });
           }
         }
-      } else if (arbiterResult?.policy?.decision === 'BLOCK') {
+      } else if (arbiterDecision === 'BLOCK') {
         console.log('Facts blocked by arbiter - not storing');
-      } else if (arbiterResult?.policy?.decision === 'WARN') {
-        console.log('Facts flagged with warning by arbiter - not storing');
       } else {
         console.log('No arbiter decision or facts not ready for storage');
       }

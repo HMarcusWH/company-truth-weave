@@ -95,8 +95,8 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { entities, facts, environment = 'dev', runId } = body;
-
+    const { entities, facts, environment = 'dev', runId, feedback } = body;
+    
     if (!runId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) {
       return new Response(
         JSON.stringify({ error: 'runId must be provided and be a valid UUID' }),
@@ -209,7 +209,8 @@ CRITICAL INSTRUCTIONS:
       model: modelName,
       messages: [
         { role: 'system', content: enhancedSystemPrompt },
-        { role: 'user', content: inputData }
+        { role: 'user', content: inputData },
+        ...(feedback ? [{ role: 'user', content: JSON.stringify({ correction_instructions: feedback }) }] : [])
       ],
       tools: [{
         type: 'function',
